@@ -323,7 +323,8 @@ def esim_packages_keyboard(region_code: str, packages: list, page: int) -> Inlin
     page = max(0, min(page, pages - 1))
     for p in packages[page * per:(page + 1) * per]:
         unit = str(getattr(p, "duration_unit", "DAY")).lower()[:1]
-        label = f"{p.gb} · {p.duration}{unit} · {money(p.sell)}"
+        badge = getattr(p, "scope_badge", "")
+        label = f"{badge} {p.gb} · {p.duration}{unit} · {money(p.sell)}"
         b.button(text=label, callback_data=EsimPick(code=region_code, pkg=p.code))
     b.adjust(1)
     nav = InlineKeyboardBuilder()

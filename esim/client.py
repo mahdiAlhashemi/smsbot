@@ -85,6 +85,27 @@ class EsimPackage:
     def gb(self) -> str:
         return format_data(self.volume_bytes)
 
+    @property
+    def country_count(self) -> int:
+        """How many countries this plan covers (1 = local, >1 = regional/global)."""
+        codes = [x.strip() for x in (self.location or "").split(",")
+                 if len(x.strip()) == 2 and x.strip().isalpha()]
+        return len(codes) if codes else max(1, len(self.region_names))
+
+    @property
+    def is_local(self) -> bool:
+        return self.country_count <= 1
+
+    @property
+    def scope_badge(self) -> str:
+        """Coverage badge for the plan button: 🏠 local, 🌍N regional, 🌐N global."""
+        n = self.country_count
+        if n <= 1:
+            return "🏠"
+        if n <= 15:
+            return f"🌍{n}"
+        return f"🌐{n}"
+
 
 @dataclass
 class EsimProfile:

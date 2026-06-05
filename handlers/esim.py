@@ -100,7 +100,9 @@ async def show_packages(call: CallbackQuery, callback_data: EsimReg) -> None:
     await safe_edit(
         call,
         f"📶 <b>{iso_flag(code)} {name}</b> — choose a data plan\n\n"
-        "<i>Data · validity · price</i>",
+        "🏠 = this country only (cheapest)\n"
+        "🌍 = regional · 🌐 = global (the number = countries covered)\n\n"
+        "<i>coverage · data · validity · price</i>",
         esim_packages_keyboard(code, packages, callback_data.page),
     )
 
@@ -118,7 +120,13 @@ async def confirm_esim(call: CallbackQuery, callback_data: EsimPick) -> None:
     available = user.available if user else Decimal("0")
     can_afford = available >= price
     name = await _catalog().region_name(region)
-    coverage = ", ".join(pkg.region_names[:6]) or pkg.location
+    n = pkg.country_count
+    if pkg.is_local:
+        cov_line = f"🏠 <b>Local</b> — works in {name} only"
+    else:
+        shown = ", ".join(pkg.region_names[:6]) or pkg.location
+        more = f" +{n - 6} more" if n > 6 else ""
+        cov_line = f"🌍 <b>{n} countries</b> — {shown}{more}"
     unit = pkg.duration_unit.lower()
     text = (
         "🧾 <b>Confirm your eSIM</b>\n\n"
@@ -126,7 +134,7 @@ async def confirm_esim(call: CallbackQuery, callback_data: EsimPick) -> None:
         f"🌍 Destination: {iso_flag(region)} <b>{name}</b>\n"
         f"📦 Data: <b>{pkg.gb}</b>\n"
         f"📅 Validity: <b>{pkg.duration} {unit}{'s' if pkg.duration != 1 else ''}</b> (from first use)\n"
-        f"📡 Coverage: {coverage}\n"
+        f"📡 Coverage: {cov_line}\n"
         f"💵 Price: <b>{money(price)}</b>\n"
         f"👛 Available: <b>{money(available)}</b>\n\n"
         "<i>Delivered instantly as a QR code. Paid upfront. Needs an "
