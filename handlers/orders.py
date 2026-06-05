@@ -148,6 +148,12 @@ async def another_code_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
     order = await _owned(call, callback_data.id)
     if order is None:
         return
+    # Only a RECEIVED order can request another code; short-circuit stale taps
+    # before any money is touched (defence-in-depth with the atomic gate in
+    # request_another_code).
+    if order.status != Order.RECEIVED:
+        await call.answer("That request isn't available anymore.", show_alert=True)
+        return
     ctx = get_ctx()
     result = await order_svc.request_another_code(order, ctx.hero)
     if result == order_svc.ANOTHER_OK:
@@ -175,5 +181,10 @@ async def done_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
 async def _rerender(call: CallbackQuery, order: Order) -> None:
     try:
         await call.message.edit_text(format_order(order), reply_markup=order_keyboard(order))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 — message too old / not modified / deleted
+        # Send a fresh card and re-point the live card so the poller keeps it synced.
+        try:
+            sent = await call.message.answer(format_order(order), reply_markup=order_keyboard(order))
+            await repo.update_order(order.id, chat_id=sent.chat.id, message_id=sent.message_id)
+        except Exception:  # noqa: BLE001
+            pass

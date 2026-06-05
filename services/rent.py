@@ -54,7 +54,7 @@ async def rent_purchase(
     catalog: Catalog,
 ) -> Order:
     """Rent a number, charging the customer upfront for the whole period."""
-    if await repo.has_open_order_for(user_id, service, country):
+    if await repo.has_open_order_for(user_id, service, country, kind="rent"):
         from services.orders import DuplicateOrder
         raise DuplicateOrder()
 
@@ -179,9 +179,16 @@ def format_rent_card(order: Order) -> str:
             lines.append(f"💸 Cancel for full refund — <b>{wm}m {ws}s</b> left")
     sms = stored_sms(order)
     if sms:
+        from utils import extract_code, short
+
         lines.append(f"\n💬 <b>Received SMS ({len(sms)}):</b>")
         for s in sms[-5:]:
-            lines.append(f"• <code>{s.get('text', '')}</code>")
+            txt = s.get("text", "")
+            code = extract_code(txt)
+            if code:
+                lines.append(f"• 🔑 <code>{code}</code>  <i>(tap to copy)</i> — {short(txt, 40)}")
+            else:
+                lines.append(f"• <code>{short(txt, 70)}</code>")
     else:
         lines.append("\n⏳ <i>Waiting for SMS — they appear here automatically.</i>")
     lines.append(f"\n<i>Order #{order.id}</i>")

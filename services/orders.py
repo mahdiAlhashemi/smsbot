@@ -109,6 +109,14 @@ async def purchase(
         raise PurchaseError() from exc
 
     real_cost = activation.cost if activation.cost > 0 else cost_hint
+    if real_cost > price:
+        # Provider charged above our bid ceiling — this order loses margin.
+        # The number is already issued; flag it loudly so the admin can react
+        # (e.g. raise the bid premium / commission).
+        log.error(
+            "MARGIN BREACH order user=%s %s/%s: real_cost=%s > customer price=%s",
+            user_id, service, country, real_cost, price,
+        )
 
     order = await repo.create_order(
         user_id=user_id,
@@ -142,8 +150,14 @@ async def deliver_code(order: Order, code: str) -> bool:
         return False
     charged = await repo.charge_hold(order.user_id, order.price)
     if not charged:
-        # Hold missing (shouldn't happen) — deliver the code anyway, log it.
-        log.warning("charge_hold failed for order %s (hold missing)", order.id)
+        # Hold/balance insufficient (e.g. balance drained by an admin adjustment,
+        # or a stacked hold pushed held > balance). Don't strand the reservation:
+        # release it so the customer's available balance isn't permanently reduced.
+        await repo.release_hold(order.user_id, order.price)
+        log.error(
+            "charge_hold FAILED for order %s — released hold; code delivered "
+            "uncharged, RECONCILE manually", order.id,
+        )
     await repo.update_order(order.id, code=code)
     log.info("Order %s RECEIVED, charged=%s amount=%s", order.id, charged, order.price)
     return True
@@ -228,19 +242,32 @@ async def replace_number(order: Order, hero: HeroSMSClient, catalog: Catalog) ->
         country=country, country_name=order.country_name, price=price,
         chat_id=order.chat_id, message_id=order.message_id,
     )
-    if new_activation:
-        real_cost = new_activation.cost if new_activation.cost > 0 else (cost_hint or Decimal("0"))
-        new_order = await repo.create_order(
-            activation_id=new_activation.id, phone=new_activation.phone, cost=real_cost,
-            status=Order.WAITING,
-            expires_at=_now() + dt.timedelta(minutes=settings.order_timeout_min), **common,
-        )
-    else:
-        new_order = await repo.create_order(
-            activation_id="", phone="", cost=(cost_hint or Decimal("0")),
-            status=Order.PENDING,
-            expires_at=_now() + dt.timedelta(minutes=settings.queue_timeout_min), **common,
-        )
+    try:
+        if new_activation:
+            real_cost = new_activation.cost if new_activation.cost > 0 else (cost_hint or Decimal("0"))
+            new_order = await repo.create_order(
+                activation_id=new_activation.id, phone=new_activation.phone, cost=real_cost,
+                status=Order.WAITING,
+                expires_at=_now() + dt.timedelta(minutes=settings.order_timeout_min), **common,
+            )
+        else:
+            new_order = await repo.create_order(
+                activation_id="", phone="", cost=(cost_hint or Decimal("0")),
+                status=Order.PENDING,
+                expires_at=_now() + dt.timedelta(minutes=settings.queue_timeout_min), **common,
+            )
+    except Exception:  # noqa: BLE001 — DB commit failed (lock/disk) AFTER old order closed
+        # The old order is already CANCELED with the hold carried over. If the
+        # replacement can't persist, release the now-orphaned hold and free the
+        # freshly grabbed number so neither money nor a number is leaked.
+        log.exception("replace create_order failed for order %s — releasing carried hold", order.id)
+        await repo.release_hold(order.user_id, price)
+        if new_activation:
+            try:
+                await hero.cancel(new_activation.id)
+            except HeroSMSError:
+                pass
+        return None
     catalog.invalidate_prices(service)
     log.info("Order %s REPLACED by order %s (new phone=%s)", order.id, new_order.id, new_order.phone)
     return new_order
@@ -316,18 +343,30 @@ ANOTHER_ERROR = "ERROR"
 
 
 async def request_another_code(order: Order, hero: HeroSMSClient) -> str:
-    """Ask for another SMS on the same number. Holds the price again (each code
-    is charged), then flips the order back to WAITING so the poller bills the
-    next code on arrival."""
+    """Ask for another SMS on the same number (each code is a fresh hold+charge).
+
+    Wins the RECEIVED→WAITING transition FIRST (the exactly-once gate), so a
+    double-tap or a stale card can never reserve an orphaned hold: only the single
+    caller that flips the status holds the price and calls HeroSMS. On hero
+    failure (or a lost transition) the hold is released and the status rolled back.
+    """
+    # Atomic gate: only the caller that actually flips RECEIVED→WAITING proceeds.
+    if not await repo.close_order(order.id, Order.WAITING, (Order.RECEIVED,)):
+        return ANOTHER_ERROR
     if not await repo.try_hold(order.user_id, order.price):
+        await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,))  # roll back
         return ANOTHER_INSUFFICIENT
     try:
         await hero.request_another_code(order.activation_id)
     except HeroSMSError as exc:
         await repo.release_hold(order.user_id, order.price)
+        await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,))  # roll back
         log.warning("request_another_code %s failed: %s", order.activation_id, exc.code)
         return ANOTHER_ERROR
-    # Reopen for the next code (clear the previous code so the new one shows).
-    await repo.close_order(order.id, Order.WAITING, (Order.RECEIVED,))
-    await repo.update_order(order.id, code=None)
+    # Give the reopened order a fresh code window (else the poller would EXPIRE it
+    # immediately on the stale expires_at) and clear the old code.
+    await repo.update_order(
+        order.id, code=None,
+        expires_at=_now() + dt.timedelta(minutes=settings.order_timeout_min),
+    )
     return ANOTHER_OK

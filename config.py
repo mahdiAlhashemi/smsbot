@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     # Channel the bot posts announcements to (e.g. @mychannel or -100123...).
     # The bot must be an admin of this channel.
     post_channel: str = ""
+    # Support contact shown to users for help (@username or a t.me/https link).
+    support_contact: str = ""
+    # Admin gets a DM when a provider's master balance drops below this (USD).
+    low_balance_threshold: Decimal = Decimal("3")
 
     # HeroSMS
     herosms_api_key: str
@@ -81,6 +85,16 @@ class Settings(BaseSettings):
     @property
     def esim_enabled(self) -> bool:
         return bool(self.esim_access_code and self.esim_secret_key)
+
+    @property
+    def support_url(self) -> str:
+        """Normalized https link to the support contact, or '' if unset."""
+        c = self.support_contact.strip()
+        if not c:
+            return ""
+        if c.startswith("http"):
+            return c
+        return f"https://t.me/{c.lstrip('@')}"
 
 
 settings = Settings()  # type: ignore[call-arg]

@@ -206,11 +206,14 @@ async def _try_provision(order: Order, esim: EsimAccessClient) -> EsimProfile | 
     ready = next((p for p in profiles if p.ready), None)
     if not ready:
         return None
-    # Persist the profile and mark delivered (WAITING -> RECEIVED, once).
+    # Persist the profile and mark delivered (WAITING -> RECEIVED, once). Only the
+    # caller that WINS this transition returns the profile, so the inline buy poll
+    # and the background esim_poller can never both send the QR for one order.
     if await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,)):
         await repo.update_order(order.id, phone=ready.iccid, code=_dump_profile(ready))
         log.info("eSIM order %s provisioned: iccid=%s", order.id, ready.iccid)
-    return ready
+        return ready
+    return None  # already delivered by another path — don't double-send the QR
 
 
 async def poll_esim_provision(order: Order, esim: EsimAccessClient) -> EsimProfile | None:

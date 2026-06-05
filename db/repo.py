@@ -265,9 +265,10 @@ async def get_open_esim_orders() -> list[Order]:
         return list(result.scalars().all())
 
 
-async def has_open_order_for(user_id: int, service: str, country: str) -> bool:
-    """True if the user already has an open (pending/waiting/received) order for
-    this exact service + country — used to block duplicate orders."""
+async def has_open_order_for(user_id: int, service: str, country: str, kind: str = "sms") -> bool:
+    """True if the user already has an open (pending/waiting/received) order of
+    this kind for this exact service + country — used to block duplicate orders.
+    Scoped by kind so an open SMS order doesn't block a rental of the same app."""
     async with session_factory() as s:
         result = await s.execute(
             select(Order.id)
@@ -275,6 +276,7 @@ async def has_open_order_for(user_id: int, service: str, country: str) -> bool:
                 Order.user_id == user_id,
                 Order.service == service,
                 Order.country == country,
+                Order.kind == kind,
                 Order.status.in_([Order.PENDING, Order.WAITING, Order.RECEIVED]),
             )
             .limit(1)

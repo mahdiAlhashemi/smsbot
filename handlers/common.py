@@ -87,14 +87,29 @@ HELP_TEXT = (
     "📱 <b>Rent</b>\n"
     "• Receive codes for the whole rental period (from 24 hours).\n"
     "• Cancellation (full refund) available <b>after 2 min and no later than 20 min</b>.\n\n"
-    "• One number = one service. You only pay an activation when the code arrives.\n\n"
-    "Need help? Contact the bot administrator."
+    "• One number = one service. You only pay an activation when the code arrives."
 )
+
+
+def help_text() -> str:
+    if settings.support_url:
+        return HELP_TEXT + "\n\n💬 Need help? Tap <b>Contact support</b> below."
+    return HELP_TEXT + "\n\nNeed help? Contact the bot administrator."
+
+
+def help_keyboard():
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    b = InlineKeyboardBuilder()
+    if settings.support_url:
+        b.button(text="💬 Contact support", url=settings.support_url)
+    b.button(text="⬅️ Back", callback_data=Nav(to="main"))
+    b.adjust(1)
+    return b.as_markup()
 
 
 @router.callback_query(Nav.filter(F.to == "help"))
 async def nav_help(call: CallbackQuery) -> None:
-    await safe_edit(call, HELP_TEXT, back_button("main"))
+    await safe_edit(call, help_text(), help_keyboard())
     await call.answer()
 
 
@@ -109,7 +124,7 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(HELP_TEXT, reply_markup=back_button("main"))
+    await message.answer(help_text(), reply_markup=help_keyboard())
 
 
 @router.message(Command("balance"))

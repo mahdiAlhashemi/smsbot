@@ -47,7 +47,12 @@ class PayCheck(CallbackData, prefix="pay"):
 
 
 class AdminAct(CallbackData, prefix="adm"):
-    action: str  # stats | give | markup | broadcast | block
+    action: str  # stats | give | markup | bid | esimcomm | finduser | broadcast | channelpost
+
+
+class AdminUser(CallbackData, prefix="au"):
+    action: str  # block | unblock
+    id: int
 
 
 # ─── Rent flow ──────────────────────────────────────────────────────────────

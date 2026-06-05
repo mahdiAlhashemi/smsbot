@@ -55,8 +55,9 @@ def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False
         layout.append(1)
     b.button(text="👛 Wallet", callback_data=Nav(to="wallet"))
     b.button(text="📦 My orders", callback_data=Nav(to="orders"))
+    b.button(text="👤 Account", callback_data=Nav(to="account"))
     b.button(text="ℹ️ Help", callback_data=Nav(to="help"))
-    layout += [2, 1]              # Wallet+Orders, Help
+    layout += [2, 2]             # Wallet+Orders, Account+Help
     if is_admin:
         b.button(text="🛠 Admin", callback_data=Nav(to="admin"))
         layout.append(1)
@@ -161,7 +162,11 @@ def order_keyboard(order: Order) -> InlineKeyboardMarkup:
         b.button(text="❌ Cancel (no charge)", callback_data=OrderAct(action="cancel", id=order.id))
         b.adjust(1)
     elif order.status == Order.RECEIVED:
-        b.button(text="🔄 Get another code", callback_data=OrderAct(action="another", id=order.id))
+        # Show the price — each extra code is a fresh charge, so make the cost visible.
+        b.button(
+            text=f"🔄 Another code ({money(order.price)})",
+            callback_data=OrderAct(action="another", id=order.id),
+        )
         b.button(text="✔️ Done", callback_data=OrderAct(action="done", id=order.id))
         b.adjust(2)
     b.row(InlineKeyboardButton(text="📦 My orders", callback_data=Nav(to="orders").pack()))
@@ -361,8 +366,9 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     b.button(text="📈 SMS commission %", callback_data=AdminAct(action="markup"))
     b.button(text="🎯 Bid premium %", callback_data=AdminAct(action="bid"))
     b.button(text="📶 eSIM commission %", callback_data=AdminAct(action="esimcomm"))
+    b.button(text="🔍 Find user", callback_data=AdminAct(action="finduser"))
     b.button(text="📣 Broadcast", callback_data=AdminAct(action="broadcast"))
     b.button(text="📢 Post to channel", callback_data=AdminAct(action="channelpost"))
     b.button(text="⬅️ Back", callback_data=Nav(to="main"))
-    b.adjust(2, 2, 1, 2, 1)
+    b.adjust(2, 2, 2, 2, 1)
     return b.as_markup()

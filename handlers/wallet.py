@@ -49,7 +49,7 @@ async def topup_menu(call: CallbackQuery) -> None:
         return
     await safe_edit(
         call,
-        "➕ <b>Top up</b>\n\nChoose an amount (in USD, paid in crypto):",
+        "➕ <b>Top up</b>\n\nChoose an amount (in USD, paid in USDT):",
         topup_amounts_keyboard(),
     )
     await call.answer()
@@ -125,8 +125,8 @@ async def _create_invoice(message: Message, user_id: int, amount: Decimal, edit_
     pay_url = inv["pay_url"]
     text = (
         "🧾 <b>Invoice created</b>\n\n"
-        f"Amount: <b>{money(amount)}</b>\n\n"
-        "Tap <b>Pay now</b>, pay with any supported crypto, then press <b>I have paid</b>.\n"
+        f"Amount: <b>{money(amount)}</b> (pay in <b>USDT</b>)\n\n"
+        "Tap <b>Pay now</b>, pay with <b>USDT</b>, then press <b>I have paid</b>.\n"
         "<i>Your balance is also credited automatically within ~1 minute.</i>"
     )
     kb = payment_keyboard(pay_url, payment.id)

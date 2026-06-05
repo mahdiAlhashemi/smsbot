@@ -241,30 +241,42 @@ class HeroSMSClient:
             params["maxPrice"] = str(max_price)
         if operator:
             params["operator"] = operator
+        # Try getNumberV2. We fall back to legacy getNumber ONLY when V2 is
+        # genuinely unavailable on this endpoint (HTTP/route error or non-JSON).
+        # A V2 call that returns a parsed JSON body is AUTHORITATIVE — we return
+        # it or raise; we NEVER fall through afterwards, because doing so would
+        # place a SECOND order (a real number billed to the master account).
+        v2_text: str | None = None
         try:
-            text = await self._raw("getNumberV2", **params)
-            data = self._json(text)
-            if isinstance(data, dict):
-                act_id = data.get("activationId") or data.get("id")
-                phone = data.get("phoneNumber") or data.get("phone")
-                if act_id and phone:
-                    return Activation(
-                        id=str(act_id),
-                        phone=str(phone),
-                        cost=_to_decimal(data.get("activationCost", 0)),
-                        country=str(data.get("countryCode", country)),
-                        operator=data.get("activationOperator"),
-                        can_get_another=bool(data.get("canGetAnotherSms", False)),
-                    )
-        except (json.JSONDecodeError, HeroSMSError) as exc:
-            # Real business errors must propagate (so the caller can queue, etc.).
-            # But if getNumberV2 is unavailable on this endpoint (HTTP 404 /
-            # ROUTE_NOT_FOUND) or returns junk, fall back to the legacy getNumber.
-            if isinstance(exc, HeroSMSError) and exc.code in _V2_PROPAGATE:
-                raise
-            log.info("getNumberV2 unavailable (%s) — falling back to getNumber",
-                     getattr(exc, "code", type(exc).__name__))
-        # Legacy:  ACCESS_NUMBER:activationId:phoneNumber
+            v2_text = await self._raw("getNumberV2", **params)
+        except HeroSMSError as exc:
+            if exc.code in _V2_PROPAGATE:
+                raise  # real business outcome (NO_NUMBERS, NO_BALANCE, BAD_KEY, …)
+            log.info("getNumberV2 unavailable (%s) — falling back to getNumber", exc.code)
+            v2_text = None
+        if v2_text is not None:
+            try:
+                data = self._json(v2_text)
+            except json.JSONDecodeError:
+                log.info("getNumberV2 returned non-JSON — falling back to getNumber")
+                data = None
+            if data is not None:
+                if isinstance(data, dict):
+                    act_id = data.get("activationId") or data.get("id")
+                    phone = data.get("phoneNumber") or data.get("phone")
+                    if act_id and phone:
+                        return Activation(
+                            id=str(act_id),
+                            phone=str(phone),
+                            cost=_to_decimal(data.get("activationCost", 0)),
+                            country=str(data.get("countryCode", country)),
+                            operator=data.get("activationOperator"),
+                            can_get_another=bool(data.get("canGetAnotherSms", False)),
+                        )
+                # Parsed V2 response but not a usable number — authoritative failure,
+                # do NOT fall through to a second order.
+                raise HeroSMSError("UNEXPECTED_RESPONSE", str(data)[:200])
+        # Legacy:  ACCESS_NUMBER:activationId:phoneNumber (only when V2 unavailable)
         text = await self._raw("getNumber", **params)
         if text.upper().startswith("ACCESS_NUMBER"):
             parts = text.split(":")

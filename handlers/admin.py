@@ -13,7 +13,7 @@ from config import settings
 from db import repo
 from handlers.common import is_admin, safe_edit
 from handlers.states import AdminFlow
-from keyboards.callbacks import AdminAct, Nav
+from keyboards.callbacks import AdminAct, AdminUser, Nav
 from keyboards.menus import admin_keyboard, back_button
 from services import pricing
 from utils import money
@@ -116,6 +116,16 @@ async def admin_give(message: Message, state: FSMContext) -> None:
     user = await repo.get_user(target)
     if user is None:
         await message.answer("That user has not started the bot yet.")
+        return
+    held = user.held or Decimal("0")
+    if amount < 0 and (user.balance + amount) < held:
+        # Deducting this much would drop balance below funds reserved by open
+        # orders, breaking charge_hold. Cap it.
+        await message.answer(
+            "❌ Can't deduct that much — it would drop the balance below funds "
+            f"held by open orders.\nBalance {money(user.balance)}, on hold {money(held)}. "
+            f"Max deductible: {money(user.balance - held)}."
+        )
         return
     new_bal = await repo.credit(target, amount)
     await state.clear()
@@ -238,6 +248,78 @@ async def admin_esim(message: Message, state: FSMContext) -> None:
     await pricing.set_esim_commission(value)
     await state.clear()
     await message.answer(f"✅ eSIM commission set to <b>{value}%</b>.")
+
+
+def _user_card_text(u) -> str:
+    status = "🚫 <b>BLOCKED</b>" if u.is_blocked else "✅ active"
+    uname = f"@{u.username}" if u.username else "—"
+    return (
+        f"👤 <b>User</b> <code>{u.id}</code>\n"
+        f"Username: {uname}\nStatus: {status}\n\n"
+        f"💼 Balance: <b>{money(u.balance)}</b>\n"
+        f"🔒 Held: {money(u.held or 0)} · Available: <b>{money(u.available)}</b>\n"
+        f"💸 Total spent: <b>{money(u.total_spent)}</b>"
+    )
+
+
+def _user_card_kb(u):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    b = InlineKeyboardBuilder()
+    if u.is_blocked:
+        b.button(text="✅ Unblock", callback_data=AdminUser(action="unblock", id=u.id))
+    else:
+        b.button(text="🚫 Block", callback_data=AdminUser(action="block", id=u.id))
+    b.button(text="⬅️ Admin", callback_data=Nav(to="admin"))
+    b.adjust(1)
+    return b.as_markup()
+
+
+@router.callback_query(AdminAct.filter(F.action == "finduser"))
+async def admin_finduser_prompt(call: CallbackQuery, state: FSMContext) -> None:
+    if not _guard(call.from_user.id):
+        await call.answer("Not authorised.", show_alert=True)
+        return
+    await state.set_state(AdminFlow.finduser)
+    await safe_edit(
+        call,
+        "🔍 <b>Find user</b>\n\nSend the user's Telegram ID (from 📦 their order, "
+        "or @userinfobot):",
+        back_button("admin"),
+    )
+    await call.answer()
+
+
+@router.message(AdminFlow.finduser, F.text)
+async def admin_finduser(message: Message, state: FSMContext) -> None:
+    if not _guard(message.from_user.id):
+        return
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        await message.answer("Send a numeric user ID.")
+        return
+    u = await repo.get_user(uid)
+    if u is None:
+        await message.answer("No such user (they haven't started the bot).")
+        return
+    await state.clear()
+    await message.answer(_user_card_text(u), reply_markup=_user_card_kb(u))
+
+
+@router.callback_query(AdminUser.filter())
+async def admin_block_toggle(call: CallbackQuery, callback_data: AdminUser) -> None:
+    if not _guard(call.from_user.id):
+        await call.answer("Not authorised.", show_alert=True)
+        return
+    block = callback_data.action == "block"
+    await repo.set_blocked(callback_data.id, block)
+    u = await repo.get_user(callback_data.id)
+    if u is not None:
+        try:
+            await call.message.edit_text(_user_card_text(u), reply_markup=_user_card_kb(u))
+        except Exception:  # noqa: BLE001
+            pass
+    await call.answer("User blocked." if block else "User unblocked.", show_alert=True)
 
 
 @router.callback_query(AdminAct.filter(F.action == "broadcast"))

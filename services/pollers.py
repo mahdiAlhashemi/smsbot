@@ -4,6 +4,9 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import os
+import signal
+import time
 
 from aiogram import Bot
 
@@ -189,6 +192,19 @@ async def _poll_esim_once(bot: Bot) -> None:
         try:
             profile = await esim_svc.poll_esim_provision(order, ctx.esim)
             if not profile:
+                # Past the provisioning deadline and still no QR → alert the user
+                # and admin once, then back off so we don't re-alert every cycle.
+                if _now() >= _aware(order.expires_at):
+                    await _notify(
+                        bot, order.user_id,
+                        f"⏳ Your eSIM (order #{order.id}) is taking longer than usual to "
+                        "prepare. We're still on it — the QR will appear here automatically. "
+                        "If it doesn't arrive soon, please contact support.",
+                    )
+                    for aid in settings.admin_id_list:
+                        await _notify(bot, aid,
+                                      f"⚠️ eSIM order #{order.id} not provisioned past deadline — check esimaccess.")
+                    await repo.update_order(order.id, expires_at=_now() + dt.timedelta(hours=6))
                 continue
             fresh = await repo.get_order(order.id)
             # Update the live card in place, then push the QR image.
@@ -272,10 +288,16 @@ async def _poll_payments_once(bot: Bot, provider) -> None:
     for payment in await repo.get_pending_payments():
         try:
             status = await provider.invoice_status(payment.invoice_id, f"nh{payment.id}")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # Transient provider/network error — log and retry next cycle. NEVER
+            # expire on an error: the invoice might actually be paid and we just
+            # can't reach the provider, and expiring it would lose the user's funds.
+            log.warning("payment %s status check failed: %s", payment.id, exc)
             continue
         if status == "paid":
             if await repo.mark_payment_paid(payment.id):
+                # Invoices are amount-locked (currency=USD, to_currency=USDT), so
+                # the requested amount is what the customer paid.
                 new_bal = await repo.credit(payment.user_id, payment.amount)
                 await _notify(
                     bot,
@@ -286,10 +308,60 @@ async def _poll_payments_once(bot: Bot, provider) -> None:
                 )
         elif status == "expired":
             await repo.expire_payment(payment.id)
-        else:
-            # Backstop: drop very old still-pending invoices.
-            if _now() - _aware(payment.created_at) > dt.timedelta(hours=3):
-                await repo.expire_payment(payment.id)
+        elif _now() - _aware(payment.created_at) > dt.timedelta(hours=24):
+            # Reached ONLY after a successful 'pending' read: the provider still
+            # reports it unpaid a full day later, so the user abandoned it (real
+            # invoices expire long before 24h). Safe to stop polling it.
+            log.info("expiring abandoned unpaid payment %s (age > 24h)", payment.id)
+            await repo.expire_payment(payment.id)
+
+
+# ─── Low-balance alerts: DM admins before a provider runs dry ────────────────
+_last_balance_alert: dict[str, float] = {}
+
+
+async def balance_alert_poller(bot: Bot, hero, esim) -> None:
+    interval = 600  # 10 min
+    log.info("balance alert poller started (interval=%ss)", interval)
+    while True:
+        try:
+            await _check_provider_balances(bot, hero, esim)
+        except Exception:  # noqa: BLE001
+            log.exception("balance alert iteration failed")
+        await asyncio.sleep(interval)
+
+
+async def _check_provider_balances(bot: Bot, hero, esim) -> None:
+    threshold = settings.low_balance_threshold
+    admins = settings.admin_id_list
+    if not admins:
+        return
+
+    async def alert(name: str, bal) -> None:
+        # 1-hour cooldown per provider so admins aren't spammed.
+        if time.monotonic() - _last_balance_alert.get(name, 0.0) < 3600:
+            return
+        _last_balance_alert[name] = time.monotonic()
+        for aid in admins:
+            await _notify(
+                bot, aid,
+                f"⚠️ <b>Low {name} balance: {money(bal)}</b> (alert below {money(threshold)}).\n"
+                "Top it up to avoid failed orders.",
+            )
+
+    try:
+        hb = await hero.get_balance()
+        if hb < threshold:
+            await alert("HeroSMS", hb)
+    except Exception:  # noqa: BLE001
+        pass
+    if esim is not None:
+        try:
+            eb = await esim.balance()
+            if eb < threshold:
+                await alert("eSIM", eb)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def _notify(bot: Bot, user_id: int, text: str, reply_markup=None) -> None:
@@ -297,6 +369,18 @@ async def _notify(bot: Bot, user_id: int, text: str, reply_markup=None) -> None:
         await bot.send_message(user_id, text, reply_markup=reply_markup, disable_web_page_preview=True)
     except Exception:  # noqa: BLE001
         log.debug("could not notify user %s", user_id)
+
+
+def _supervise(task: asyncio.Task) -> None:
+    """If a poller dies unexpectedly (not a clean shutdown cancel), crash the
+    process so systemd/Docker restarts it — a silently-dead poller would stop
+    delivering codes / crediting top-ups with no visible failure."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.critical("poller %s crashed (%s) — exiting for restart", task.get_name(), exc)
+        os.kill(os.getpid(), signal.SIGTERM)
 
 
 def start_pollers() -> list[asyncio.Task]:
@@ -311,4 +395,8 @@ def start_pollers() -> list[asyncio.Task]:
         tasks.append(asyncio.create_task(esim_poller(ctx.bot), name="esim_poller"))
     if ctx.payments is not None:
         tasks.append(asyncio.create_task(payment_poller(ctx.bot, ctx.payments), name="payment_poller"))
+    tasks.append(asyncio.create_task(
+        balance_alert_poller(ctx.bot, ctx.hero, ctx.esim), name="balance_alert_poller"))
+    for t in tasks:
+        t.add_done_callback(_supervise)
     return tasks

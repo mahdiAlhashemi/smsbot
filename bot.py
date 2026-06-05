@@ -69,11 +69,38 @@ async def _apply_branding(bot: Bot) -> None:
             log.warning("could not set bot %s: %s", label, exc)
 
 
+async def _startup_checks(hero, payments, esim) -> None:
+    """Non-blocking provider connectivity checks, each bounded by a short timeout."""
+    try:
+        bal = await asyncio.wait_for(hero.get_balance(), timeout=8)
+        log.info("HeroSMS connected. Master account balance: %s", bal)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("HeroSMS balance check failed: %s", exc)
+    if payments is not None:
+        try:
+            await asyncio.wait_for(payments.verify(), timeout=8)
+            log.info("Payments: %s connected.", payments.name)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Payments (%s) check failed: %s", payments.name, exc)
+    else:
+        log.info("Crypto payments disabled. Admin manual top-up still works.")
+    if esim is not None:
+        try:
+            eb = await asyncio.wait_for(esim.balance(), timeout=8)
+            log.info("eSIM Access connected. Merchant balance: $%s", eb)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("eSIM Access check failed: %s", exc)
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # httpx logs full request URLs at INFO — for HeroSMS the api_key rides in the
+    # query string. Pin these loggers to WARNING so the secret never hits the log.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     await init_db()
 
     bot = Bot(
@@ -115,26 +142,11 @@ async def main() -> None:
         esim=esim, esim_catalog=esim_catalog,
     ))
 
-    # Connectivity sanity checks (non-fatal).
-    try:
-        log.info("HeroSMS connected. Master account balance: %s", await hero.get_balance())
-    except Exception as exc:  # noqa: BLE001
-        log.warning("HeroSMS balance check failed: %s", exc)
-    if payments is not None:
-        try:
-            await payments.verify()
-            log.info("Payments: %s connected.", payments.name)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Payments (%s) check failed: %s", payments.name, exc)
-    else:
-        log.info("Crypto payments disabled. Admin manual top-up still works.")
-    if esim is not None:
-        try:
-            log.info("eSIM Access connected. Merchant balance: $%s", await esim.balance())
-        except Exception as exc:  # noqa: BLE001
-            log.warning("eSIM Access check failed: %s", exc)
-
+    # Start pollers + Telegram polling immediately; provider connectivity checks
+    # run in the background (bounded timeouts) so a slow/down provider can't stall
+    # the bot from coming online.
     tasks = start_pollers()
+    asyncio.create_task(_startup_checks(hero, payments, esim))
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:

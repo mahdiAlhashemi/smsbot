@@ -107,6 +107,26 @@ async def test_get_number():
     check("v2 cost", act.cost == Decimal("0.40"))
     check("v2 another", act.can_get_another is True)
 
+    # A parsed-but-incomplete V2 response is AUTHORITATIVE — it must raise, never
+    # fall through to a second getNumber (which would double-order a real number).
+    # 'getNumber' is intentionally absent: a fall-through would KeyError, not raise.
+    c2 = _client_returning({"getNumberV2": '{"status":"error","msg":"bad"}'})
+    code = None
+    try:
+        await c2.get_number("tg", "0")
+    except HeroSMSError as e:
+        code = e.code
+    except Exception as e:  # noqa: BLE001
+        code = "WRONG:" + type(e).__name__
+    check("v2 malformed raises (no double-order)", code == "UNEXPECTED_RESPONSE")
+
+    # V2 genuinely unavailable (HTTP/route error) -> legacy getNumber fallback.
+    def _v2_404(_params):
+        raise HeroSMSError("HTTP_404")
+    c3 = _client_returning({"getNumberV2": _v2_404, "getNumber": "ACCESS_NUMBER:55:79991234567"})
+    act3 = await c3.get_number("tg", "0")
+    check("v2 unavailable -> legacy fallback", act3.id == "55" and act3.phone == "79991234567")
+
     # NO_NUMBERS should propagate even from the V2 attempt.
     def boom(_):
         HeroSMSClient._raise_for_error("NO_NUMBERS", 200)
@@ -123,7 +143,7 @@ async def test_catalog_parsing():
     c = _client_returning({
         "getServicesList": '{"status":"success","services":[{"code":"tg","name":"Telegram"},{"code":"wa","name":"WhatsApp"}]}',
         "getCountries": '{"0":{"id":0,"rus":"Россия","eng":"Russia"},"6":{"id":6,"eng":"Indonesia"}}',
-        "getPrices": '{"0":{"tg":{"cost":0.40,"count":150}},"6":{"tg":{"cost":0.20,"count":0}}}',
+        "getPrices": '{"0":{"tg":{"cost":0.40,"count":150,"physicalCount":150}},"6":{"tg":{"cost":0.20,"count":99,"physicalCount":0}}}',
     })
     svcs = await c.get_services()
     check("services count", len(svcs) == 2 and svcs[0]["code"] == "tg")

@@ -2,9 +2,21 @@
 from __future__ import annotations
 
 import datetime as _dt
+import re as _re
 from decimal import Decimal
 
 from config import settings
+
+# Matches a 4–8 digit verification code (the common OTP shape).
+_OTP_RE = _re.compile(r"(?<!\d)(\d{4,8})(?!\d)")
+
+
+def extract_code(text) -> str | None:
+    """Best-effort OTP extraction from an SMS body (the first 4–8 digit run)."""
+    if not text:
+        return None
+    m = _OTP_RE.search(str(text))
+    return m.group(1) if m else None
 
 # HeroSMS cancellation policy (mirrors the provider's own rules):
 #   Activation: cancel allowed only AFTER 2 min (within its 20-min code window).
@@ -15,7 +27,8 @@ RENT_CANCEL_BEFORE_MIN = 20
 
 
 def money(amount) -> str:
-    return f"{settings.currency_symbol}{Decimal(amount):.2f}"
+    # None/empty -> $0.00 so a half-built order can never crash a card/keyboard.
+    return f"{settings.currency_symbol}{Decimal(amount or 0):.2f}"
 
 
 def _aware(value: _dt.datetime) -> _dt.datetime:
