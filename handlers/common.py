@@ -38,12 +38,21 @@ async def main_menu_text(user_id: int) -> str:
     bal_line = f"Your balance: <b>{money(user.balance if user else 0)}</b>"
     if user and user.held and user.held > 0:
         bal_line += f"\nOn hold: {money(user.held)} · Available: <b>{money(user.available)}</b>"
+    contact = ""
+    if settings.support_contact or settings.channel_username:
+        bits = []
+        if settings.support_contact:
+            bits.append(f"💬 Support: {settings.support_contact}")
+        if settings.channel_username:
+            bits.append(f"📢 Channel: {settings.channel_username}")
+        contact = "\n\n" + "  ·  ".join(bits)
     return (
-        "📱 <b>NumberHub — Virtual Numbers</b>\n\n"
+        "📱 <b>NumberHub — Numbers & eSIM</b>\n\n"
         f"{bal_line}\n\n"
         "Buy a temporary number to receive OTP verification codes for 800+ "
         "services in 190+ countries.\n"
-        "<i>You only pay when the code actually arrives.</i>\n\nChoose an option below 👇"
+        "<i>You only pay when the code actually arrives.</i>"
+        f"{contact}\n\nChoose an option below 👇"
     )
 
 
