@@ -58,10 +58,11 @@ async def _on_error(event: ErrorEvent) -> bool:
 async def _apply_branding(bot: Bot) -> None:
     """Set the bot's public name/description. Telegram rate-limits these, so
     failures are non-fatal (they just mean it was set recently)."""
+    description = BOT_DESCRIPTION + settings.contact_footer
     for label, coro in (
         ("name", bot.set_my_name(name=BOT_NAME)),
         ("short_description", bot.set_my_short_description(short_description=BOT_SHORT_DESCRIPTION)),
-        ("description", bot.set_my_description(description=BOT_DESCRIPTION)),
+        ("description", bot.set_my_description(description=description)),
     ):
         try:
             await coro

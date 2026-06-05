@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     post_channel: str = ""
     # Support contact shown to users for help (@username or a t.me/https link).
     support_contact: str = ""
+    # Public channel @username shown to users (separate from post_channel's -100 id).
+    channel_username: str = ""
     # Admin gets a DM when a provider's master balance drops below this (USD).
     low_balance_threshold: Decimal = Decimal("3")
 
@@ -110,6 +112,26 @@ class Settings(BaseSettings):
         if c.startswith("http"):
             return c
         return f"https://t.me/{c.lstrip('@')}"
+
+    @property
+    def channel_url(self) -> str:
+        """Normalized https link to the public channel, or '' if unset."""
+        c = self.channel_username.strip()
+        if not c:
+            return ""
+        if c.startswith("http"):
+            return c
+        return f"https://t.me/{c.lstrip('@')}"
+
+    @property
+    def contact_footer(self) -> str:
+        """' 💬 Support: @x · 📢 Channel: @y' line for the bot description."""
+        parts = []
+        if self.support_contact.strip():
+            parts.append(f"💬 Support: {self.support_contact.strip()}")
+        if self.channel_username.strip():
+            parts.append(f"📢 Channel: {self.channel_username.strip()}")
+        return ("\n\n" + " · ".join(parts)) if parts else ""
 
 
 settings = Settings()  # type: ignore[call-arg]

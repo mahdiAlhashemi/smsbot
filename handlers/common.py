@@ -109,6 +109,8 @@ def help_keyboard():
     b = InlineKeyboardBuilder()
     if settings.support_url:
         b.button(text="💬 Contact support", url=settings.support_url)
+    if settings.channel_url:
+        b.button(text="📢 Our channel", url=settings.channel_url)
     b.button(text="⬅️ Back", callback_data=Nav(to="main"))
     b.adjust(1)
     return b.as_markup()
