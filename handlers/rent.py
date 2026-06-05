@@ -37,7 +37,7 @@ async def open_rent(call: CallbackQuery, state: FSMContext) -> None:
     await safe_edit(
         call,
         "📱 <b>Rent a number</b>\n\nRent a number for a period and receive "
-        "<b>many SMS</b> the whole time (great for ongoing use).\n\n"
+        "<b>many OTP codes</b> the whole time (great for ongoing use).\n\n"
         "Choose how long you want it:",
         rent_durations_keyboard(),
     )
@@ -156,7 +156,7 @@ async def confirm_rent(call: CallbackQuery, callback_data: RentConf) -> None:
         "📩 Receive codes during the whole rental period.\n"
         "❌ Cancellation (full refund) available <b>after 2 min</b> and "
         "<b>no later than 20 min</b>.\n\n"
-        "<i>Paid upfront for the whole period. The number receives all its SMS during that time.</i>"
+        "<i>Paid upfront for the whole period. The number receives all its OTP codes during that time.</i>"
     )
     if not can_afford:
         text += f"\n\n⚠️ Not enough balance — you need {money(price - available)} more."

@@ -27,14 +27,14 @@ log = logging.getLogger(__name__)
 # ─── Bot profile branding (NumberHub) ───────────────────────────────────────
 BOT_NAME = "NumberHub — Numbers & eSIM"
 BOT_SHORT_DESCRIPTION = (
-    "Virtual numbers for SMS codes (800+ apps) + travel eSIM data in 219 "
+    "Virtual numbers for OTP codes (800+ apps) + travel eSIM data in 219 "
     "destinations. Pay only when it works."
 )
 BOT_DESCRIPTION = (
     "📱 NumberHub — your all-in-one hub for virtual numbers and travel data.\n\n"
-    "📲 SMS numbers — receive codes for 800+ apps (Telegram, WhatsApp, OpenAI, "
-    "Google…) across 190+ countries. Pay only when the code arrives.\n"
-    "📱 Rent a number — keep it for days or weeks and get all its SMS.\n"
+    "📲 OTP numbers — receive verification codes for 800+ apps (Telegram, WhatsApp, "
+    "OpenAI, Google…) across 190+ countries. Pay only when the code arrives.\n"
+    "📱 Rent a number — keep it for days or weeks and get all its codes.\n"
     "📶 eSIM data plans — instant QR-code eSIM for 219 destinations.\n\n"
     "✅ Crypto top-up · instant delivery · auto-refund if no code\n\n"
     "Tap Start 👇"

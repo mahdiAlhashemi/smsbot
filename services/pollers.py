@@ -146,7 +146,7 @@ async def _poll_rents_once(bot: Bot, hero: HeroSMSClient) -> None:
                 for s in new:
                     await _notify(
                         bot, order.user_id,
-                        f"💬 <b>New SMS</b> on rental #{order.id}:\n<code>{s.get('text', '')}</code>",
+                        f"💬 <b>New OTP</b> on rental #{order.id}:\n<code>{s.get('text', '')}</code>",
                     )
             else:
                 # Re-render in place so the active-time countdown ticks and the
@@ -268,7 +268,7 @@ async def _poll_queue_once(bot: Bot, hero: HeroSMSClient) -> None:
                 await _notify(
                     bot, order.user_id,
                     f"✅ <b>Your number is ready:</b> <code>{fresh.phone}</code>\n"
-                    "Waiting for the SMS code — it appears automatically.",
+                    "Waiting for the OTP code — it appears automatically.",
                 )
         except Exception:  # noqa: BLE001
             log.exception("error fulfilling pending order %s", order.id)

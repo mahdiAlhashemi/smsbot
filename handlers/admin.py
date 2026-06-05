@@ -45,10 +45,10 @@ async def open_admin(call: CallbackQuery, state: FSMContext) -> None:
         "🛠 <b>Admin panel</b>\n\n"
         "<b>Smart pricing</b>\n"
         f"🎯 Bid premium: <b>{premium}%</b> <i>(paid above floor to win numbers)</i>\n"
-        f"📈 SMS commission: <b>{markup}%</b> <i>(your profit on top)</i>"
+        f"📈 OTP commission: <b>{markup}%</b> <i>(your profit on top)</i>"
         f"{esim_line}"
         f"{min_line}\n\n"
-        "<i>SMS: customer pays (default + bid premium) + commission. eSIM: cost + "
+        "<i>OTP: customer pays (default + bid premium) + commission. eSIM: cost + "
         "eSIM commission. Your commission is always kept.</i>\n\n"
         f"💳 Payments: {'on' if settings.payments_enabled else 'off'}",
         admin_keyboard(),
@@ -148,7 +148,7 @@ async def admin_markup_prompt(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminFlow.markup)
     await safe_edit(
         call,
-        f"📈 <b>Set commission</b>\n\nYour profit %, added on top of the bid ceiling.\n"
+        f"📈 <b>Set OTP commission</b>\n\nYour profit %, added on top of the bid ceiling.\n"
         f"Current: <b>{current}%</b>\n\nSend a new percentage, e.g. <code>20</code>:",
         back_button("admin"),
     )

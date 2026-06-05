@@ -181,7 +181,7 @@ def format_rent_card(order: Order) -> str:
     if sms:
         from utils import extract_code, short
 
-        lines.append(f"\n💬 <b>Received SMS ({len(sms)}):</b>")
+        lines.append(f"\n💬 <b>Received OTP / messages ({len(sms)}):</b>")
         for s in sms[-5:]:
             txt = s.get("text", "")
             code = extract_code(txt)
@@ -190,6 +190,6 @@ def format_rent_card(order: Order) -> str:
             else:
                 lines.append(f"• <code>{short(txt, 70)}</code>")
     else:
-        lines.append("\n⏳ <i>Waiting for SMS — they appear here automatically.</i>")
+        lines.append("\n⏳ <i>Waiting for OTP — they appear here automatically.</i>")
     lines.append(f"\n<i>Order #{order.id}</i>")
     return "\n".join(lines)

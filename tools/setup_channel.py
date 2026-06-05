@@ -18,27 +18,27 @@ CH = "-1003840285433"
 API = f"https://api.telegram.org/bot{T}"
 
 TITLE = "NumberHub — Numbers & eSIM"
-DESC = ("📱 Virtual numbers for SMS codes (800+ apps, 190+ countries) + 📶 travel "
+DESC = ("📱 Virtual numbers for OTP codes (800+ apps, 190+ countries) + 📶 travel "
         "eSIM data in 219 destinations. Pay only when it works. 👉 @TheNumberHubBot")
 
 WELCOME = (
     "📱 <b>Welcome to NumberHub</b>\n\n"
     "Your all-in-one hub for virtual numbers and travel data:\n\n"
-    "📲 <b>SMS numbers</b> — receive codes for 800+ apps (Telegram, WhatsApp, "
+    "📲 <b>OTP numbers</b> — receive codes for 800+ apps (Telegram, WhatsApp, "
     "Instagram, OpenAI, Google…), 190+ countries\n"
-    "📱 <b>Rent a number</b> — keep a number for days/weeks, get all its SMS\n"
+    "📱 <b>Rent a number</b> — keep a number for days/weeks, get all its OTP\n"
     "📶 <b>eSIM data plans</b> — instant QR-code eSIM for 219 destinations\n\n"
-    "✅ SMS: pay <b>only when the code arrives</b> — no code, no charge\n"
+    "✅ OTP: pay <b>only when the code arrives</b> — no code, no charge\n"
     "✅ Instant delivery · crypto top-up\n\n"
     "👉 Start now: @TheNumberHubBot"
 )
 LAUNCH = (
     "🚀 <b>NumberHub is LIVE</b> — now with eSIM!\n\n"
     "Everything you need to verify accounts and stay online abroad:\n\n"
-    "• 📲 SMS numbers — 800+ services, 190+ countries, from <b>$0.10</b>\n"
-    "• 📱 Rentals — one number, many SMS, for days or weeks\n"
+    "• 📲 OTP numbers — 800+ services, 190+ countries, from <b>$0.10</b>\n"
+    "• 📱 Rentals — one number, many OTP, for days or weeks\n"
     "• 📶 eSIM data — 219 destinations, delivered as a QR code\n"
-    "• Auto-refund if no SMS code · replace a number anytime\n\n"
+    "• Auto-refund if no OTP code · replace a number anytime\n\n"
     "👉 @TheNumberHubBot"
 )
 HOWITWORKS = (
@@ -46,8 +46,8 @@ HOWITWORKS = (
     "1️⃣ Top up your wallet (crypto)\n"
     "2️⃣ Pick a service + country (or a rental, or an eSIM)\n"
     "3️⃣ Get your number / QR instantly\n"
-    "4️⃣ SMS codes arrive in the bot automatically\n\n"
-    "💡 For SMS you're charged <b>only when the code arrives</b>. No code = no charge.\n\n"
+    "4️⃣ OTP codes arrive in the bot automatically\n\n"
+    "💡 For OTP you're charged <b>only when the code arrives</b>. No code = no charge.\n\n"
     "👉 @TheNumberHubBot"
 )
 ESIM = (
@@ -61,7 +61,7 @@ ESIM = (
 )
 WHYUS = (
     "🛡 <b>Why NumberHub?</b>\n\n"
-    "✅ Pay-per-result on SMS — charged only when the code arrives\n"
+    "✅ Pay-per-result on OTP — charged only when the code arrives\n"
     "✅ Instant auto-refund if no code\n"
     "✅ Replace non-working numbers in 1 tap\n"
     "✅ Rentals + travel eSIM data, all in one bot\n"

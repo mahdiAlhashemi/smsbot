@@ -179,10 +179,10 @@ async def main():
     )
     await repo.mark_payment_paid(pay2.id)
     new_bal, bonus = await billing.credit_topup(300, Decimal("20.00"))
-    # ladder 20->+3% = 0.60, first-deposit 15% of 20 = 3.00 capped at 2.00 => 2.60
-    check("deposit bonus = 2.60", bonus == Decimal("2.60"))
+    # ladder 20->+5% = 1.00, first +10% = 2.00 => 3.00, hard-capped at 10% (2.00)
+    check("deposit bonus = 2.00 (10% cap)", bonus == Decimal("2.00"))
     u3 = await repo.get_user(300)
-    check("referee credited + bounty (23.10)", u3.balance == Decimal("23.10"))
+    check("referee credited + bounty (22.50)", u3.balance == Decimal("22.50"))
     u1 = await repo.get_user(100)
     check("referrer earned 0.50", u1.ref_earnings == Decimal("0.50"))
     check("referral pays once", await repo.claim_referral_bonus(300) is None)

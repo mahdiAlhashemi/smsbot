@@ -45,7 +45,7 @@ TOPUP_PRESETS = ["2", "5", "10", "20", "50", "100"]
 
 def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="📲 Buy number (SMS)", callback_data=Nav(to="buy"))
+    b.button(text="📲 Buy OTP number", callback_data=Nav(to="buy"))
     b.button(text="📱 Rent number", callback_data=Nav(to="rent"))
     layout = [1]
     if esim_enabled:
@@ -365,7 +365,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="📊 Stats", callback_data=AdminAct(action="stats"))
     b.button(text="💵 Give balance", callback_data=AdminAct(action="give"))
-    b.button(text="📈 SMS commission %", callback_data=AdminAct(action="markup"))
+    b.button(text="📈 OTP commission %", callback_data=AdminAct(action="markup"))
     b.button(text="🎯 Bid premium %", callback_data=AdminAct(action="bid"))
     b.button(text="📶 eSIM commission %", callback_data=AdminAct(action="esimcomm"))
     b.button(text="🎚 Service price", callback_data=AdminAct(action="svcprice"))

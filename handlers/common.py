@@ -41,7 +41,7 @@ async def main_menu_text(user_id: int) -> str:
     return (
         "📱 <b>NumberHub — Virtual Numbers</b>\n\n"
         f"{bal_line}\n\n"
-        "Buy a temporary number to receive SMS verification codes for 800+ "
+        "Buy a temporary number to receive OTP verification codes for 800+ "
         "services in 190+ countries.\n"
         "<i>You only pay when the code actually arrives.</i>\n\nChoose an option below 👇"
     )
@@ -86,7 +86,7 @@ HELP_TEXT = (
     "1. <b>Top up</b> your wallet in the 👛 Wallet section.\n"
     "2. Tap 📲 <b>Buy number</b>, choose a service (Telegram, WhatsApp, …) and a country.\n"
     "3. You get a phone number. Enter it on the website/app you are registering on.\n"
-    "4. The SMS code is delivered to you here automatically.\n\n"
+    "4. The OTP code is delivered to you here automatically.\n\n"
     "📲 <b>Activation</b>\n"
     "• Receive codes from the chosen service for <b>20 minutes</b>.\n"
     "• Cancellation available <b>after 2 minutes</b>.\n"

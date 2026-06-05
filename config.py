@@ -46,12 +46,14 @@ class Settings(BaseSettings):
     min_bid: Decimal = Decimal("0")
     # eSIM commission (separate from SMS — eSIMs are fixed-price, no bid auction).
     esim_commission_percent: Decimal = Decimal("10")
-    # Top-up deposit bonuses (spend-only credit). First-ever paid top-up gets
-    # +first% (capped), and every top-up gets the ladder bonus by amount.
-    topup_first_bonus_pct: Decimal = Decimal("15")
-    topup_first_bonus_cap: Decimal = Decimal("2")
-    # "threshold:bonus%" pairs, biggest first wins. e.g. $100→+12%, $50→+7%, $20→+3%.
-    topup_bonus_tiers: str = "20:3,50:7,100:12"
+    # Top-up deposit bonuses (spend-only credit). Base 5% on any top-up, scaling
+    # to a hard max of 10%. First-ever deposit is bumped toward the max.
+    topup_first_bonus_pct: Decimal = Decimal("10")
+    topup_first_bonus_cap: Decimal = Decimal("0")   # 0 = no $ cap (the % cap governs)
+    # "threshold:bonus%" pairs, biggest first wins. e.g. $100→+10%, $50→+7%, $1→+5%.
+    topup_bonus_tiers: str = "1:5,50:7,100:10"
+    # Hard ceiling on the TOTAL deposit bonus, as a % of the top-up amount.
+    topup_bonus_max_pct: Decimal = Decimal("10")
     # Surge: extra commission % added when a number is out-of-stock (queued ⏳),
     # since the bot must bid higher to source it.
     queued_surge_pct: Decimal = Decimal("25")

@@ -54,8 +54,8 @@ async def topup_menu(call: CallbackQuery) -> None:
         ladder = " · ".join(f"+{p}% over {money(t)}" for t, p in sorted(tiers))
         blurb.append(f"\n🎁 <b>Deposit bonus:</b> {ladder}")
     if settings.topup_first_bonus_pct > 0:
-        blurb.append(f"✨ <b>First top-up:</b> +{settings.topup_first_bonus_pct}% "
-                     f"(up to {money(settings.topup_first_bonus_cap)})")
+        blurb.append(f"✨ <b>First top-up boosted</b> — up to "
+                     f"{settings.topup_bonus_max_pct}% bonus!")
     await safe_edit(call, "\n".join(blurb), topup_amounts_keyboard())
     await call.answer()
 

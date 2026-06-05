@@ -73,7 +73,7 @@ async def open_account(call: CallbackQuery) -> None:
         if len(seen) >= 3:
             break
     if link:
-        share = f"https://t.me/share/url?url={quote(link)}&text={quote('Get SMS numbers & eSIM data on NumberHub')}"
+        share = f"https://t.me/share/url?url={quote(link)}&text={quote('Get OTP numbers & eSIM data on NumberHub')}"
         b.button(text="📤 Share invite link", url=share)
     b.button(text="⬅️ Back", callback_data=Nav(to="main"))
     b.adjust(1)

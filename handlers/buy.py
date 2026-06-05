@@ -225,7 +225,7 @@ async def confirm_buy(call: CallbackQuery, callback_data: BuyConfirm) -> None:
             "No numbers are free right now, so I'm searching for one for you. "
             f"I'll keep trying for up to <b>{window}</b> — your number will appear here "
             "automatically the moment one is found. You can cancel anytime.\n\n"
-            f"<i>{money(order.price)} is on hold; you're charged only when the SMS code arrives. "
+            f"<i>{money(order.price)} is on hold; you're charged only when the OTP code arrives. "
             "If no number is found, it's released — no charge.</i>",
             order_keyboard(order),
         )
@@ -234,7 +234,7 @@ async def confirm_buy(call: CallbackQuery, callback_data: BuyConfirm) -> None:
     await safe_edit(
         call,
         format_order(order)
-        + f"\n\n⏳ Waiting for the SMS code — it appears here automatically.\n"
+        + f"\n\n⏳ Waiting for the OTP code — it appears here automatically.\n"
         f"<i>{money(order.price)} is on hold; you're charged only when the code arrives.</i>",
         order_keyboard(order),
     )

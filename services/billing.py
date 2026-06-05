@@ -45,6 +45,9 @@ async def deposit_bonus(user_id: int, amount: Decimal) -> Decimal:
         if settings.topup_first_bonus_cap > 0:
             fb = min(fb, settings.topup_first_bonus_cap)
         bonus += fb
+    # Hard ceiling: total bonus never exceeds topup_bonus_max_pct of the amount.
+    if settings.topup_bonus_max_pct > 0:
+        bonus = min(bonus, amount * settings.topup_bonus_max_pct / Decimal("100"))
     return bonus.quantize(_CENT, rounding=ROUND_DOWN)
 
 
