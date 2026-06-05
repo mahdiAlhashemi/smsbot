@@ -85,8 +85,10 @@ class EsimCatalog:
         async with ttl._lock:
             if not ttl.fresh():
                 pkgs = await self._client.packages(location_code=location_code)
-                # Cheapest first, then by data size.
-                pkgs.sort(key=lambda p: (p.cost, p.volume_bytes))
+                # Group by coverage (local → regional → global), then read like a
+                # tariff menu within each: small → large data, shorter → longer,
+                # cheaper first. Local plans (what most people want) surface first.
+                pkgs.sort(key=lambda p: (p.scope_group, p.volume_bytes, p.duration, p.cost))
                 ttl.set(pkgs)
             return ttl.value
 

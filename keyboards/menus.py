@@ -321,7 +321,20 @@ def esim_packages_keyboard(region_code: str, packages: list, page: int) -> Inlin
     per = 40
     pages = max(1, math.ceil(len(packages) / per))
     page = max(0, min(page, pages - 1))
-    for p in packages[page * per:(page + 1) * per]:
+    chunk = packages[page * per:(page + 1) * per]
+    # Section headers between coverage groups (tapping one just re-renders the
+    # page — harmless — and visually separates local / regional / global).
+    _HDR = {
+        0: "──  🏠 LOCAL · this country  ──",
+        1: "──  🌍 REGIONAL · nearby  ──",
+        2: "──  🌐 GLOBAL · worldwide  ──",
+    }
+    last_g = None
+    for p in chunk:
+        g = getattr(p, "scope_group", 0)
+        if g != last_g:
+            b.button(text=_HDR.get(g, ""), callback_data=EsimReg(code=region_code, page=page))
+            last_g = g
         unit = str(getattr(p, "duration_unit", "DAY")).lower()[:1]
         badge = getattr(p, "scope_badge", "")
         label = f"{badge} {p.gb} · {p.duration}{unit} · {money(p.sell)}"

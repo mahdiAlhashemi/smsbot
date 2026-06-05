@@ -97,6 +97,12 @@ class EsimPackage:
         return self.country_count <= 1
 
     @property
+    def scope_group(self) -> int:
+        """0 = local (1 country), 1 = regional (≤15), 2 = global."""
+        n = self.country_count
+        return 0 if n <= 1 else (1 if n <= 15 else 2)
+
+    @property
     def scope_badge(self) -> str:
         """Coverage badge for the plan button: 🏠 local, 🌍N regional, 🌐N global."""
         n = self.country_count
