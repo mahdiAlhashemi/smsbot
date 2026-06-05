@@ -25,19 +25,19 @@ from services.pollers import start_pollers
 log = logging.getLogger(__name__)
 
 # ─── Bot profile branding (NumberHub) ───────────────────────────────────────
-BOT_NAME = "NumberHub — Virtual Numbers"
+BOT_NAME = "NumberHub — Numbers & eSIM"
 BOT_SHORT_DESCRIPTION = (
-    "Virtual numbers for SMS codes: Telegram, WhatsApp, OpenAI & 800+ apps. "
-    "Pay only if the code arrives."
+    "Virtual numbers for SMS codes (800+ apps) + travel eSIM data in 219 "
+    "destinations. Pay only when it works."
 )
 BOT_DESCRIPTION = (
-    "📱 NumberHub gives you instant virtual phone numbers to receive SMS "
-    "verification codes for 800+ apps — Telegram, WhatsApp, Instagram, OpenAI, "
-    "Google and more.\n\n"
-    "✅ 190+ countries\n"
-    "✅ Pay only when it works — automatic refund if no code arrives\n"
-    "✅ Top up with crypto\n\n"
-    "Tap Start to get your first number 👇"
+    "📱 NumberHub — your all-in-one hub for virtual numbers and travel data.\n\n"
+    "📲 SMS numbers — receive codes for 800+ apps (Telegram, WhatsApp, OpenAI, "
+    "Google…) across 190+ countries. Pay only when the code arrives.\n"
+    "📱 Rent a number — keep it for days or weeks and get all its SMS.\n"
+    "📶 eSIM data plans — instant QR-code eSIM for 219 destinations.\n\n"
+    "✅ Crypto top-up · instant delivery · auto-refund if no code\n\n"
+    "Tap Start 👇"
 )
 
 
