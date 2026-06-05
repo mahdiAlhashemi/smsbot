@@ -111,10 +111,12 @@ def countries_keyboard(
     chunk = items[page * COUNTRIES_PER_PAGE : (page + 1) * COUNTRIES_PER_PAGE]
     for it in chunk:
         cid = it["country"]
-        name = short(names.get(cid, f"#{cid}"), 18)
+        name = short(names.get(cid, f"#{cid}"), 16)
         # ⏳ marks countries with no real stock right now (will be queued).
         mark = "" if it.get("count", 0) > 0 else "⏳ "
-        label = f"{mark}{flag(cid)} {name} • {money(it['sell'])}"
+        rate = it.get("rate")
+        badge = f" ✅{rate}%" if rate is not None else ""
+        label = f"{mark}{flag(cid)} {name} • {money(it['sell'])}{badge}"
         b.button(text=label, callback_data=CtyPick(code=service, country=cid))
     b.adjust(1)
 
@@ -366,6 +368,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     b.button(text="📈 SMS commission %", callback_data=AdminAct(action="markup"))
     b.button(text="🎯 Bid premium %", callback_data=AdminAct(action="bid"))
     b.button(text="📶 eSIM commission %", callback_data=AdminAct(action="esimcomm"))
+    b.button(text="🎚 Service price", callback_data=AdminAct(action="svcprice"))
     b.button(text="🔍 Find user", callback_data=AdminAct(action="finduser"))
     b.button(text="📣 Broadcast", callback_data=AdminAct(action="broadcast"))
     b.button(text="📢 Post to channel", callback_data=AdminAct(action="channelpost"))

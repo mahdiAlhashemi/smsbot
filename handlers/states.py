@@ -17,6 +17,7 @@ class AdminFlow(StatesGroup):
     markup = State()
     bid = State()
     esim_comm = State()
+    svcprice = State()
     finduser = State()
     broadcast = State()
     channelpost = State()

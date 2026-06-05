@@ -42,6 +42,9 @@ _BACKFILL = {
         ("full_name", "VARCHAR(255)"),
         ("language", "VARCHAR(8) DEFAULT 'en'"),
         ("total_spent", "NUMERIC(12,2) DEFAULT 0"),
+        ("referred_by", "BIGINT"),
+        ("ref_bonus_paid", "BOOLEAN DEFAULT 0"),
+        ("ref_earnings", "NUMERIC(12,2) DEFAULT 0"),
     ],
     "orders": [
         ("kind", "VARCHAR(8) DEFAULT 'sms'"),

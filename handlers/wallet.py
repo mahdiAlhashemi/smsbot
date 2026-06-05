@@ -47,11 +47,16 @@ async def topup_menu(call: CallbackQuery) -> None:
     if not settings.payments_enabled:
         await call.answer("Top-up is disabled.", show_alert=True)
         return
-    await safe_edit(
-        call,
-        "➕ <b>Top up</b>\n\nChoose an amount (in USD, paid in USDT):",
-        topup_amounts_keyboard(),
-    )
+    blurb = ["➕ <b>Top up</b>\n\nChoose an amount (in USD, paid in USDT):"]
+    from services.billing import _parse_tiers
+    tiers = _parse_tiers(settings.topup_bonus_tiers)
+    if tiers:
+        ladder = " · ".join(f"+{p}% over {money(t)}" for t, p in sorted(tiers))
+        blurb.append(f"\n🎁 <b>Deposit bonus:</b> {ladder}")
+    if settings.topup_first_bonus_pct > 0:
+        blurb.append(f"✨ <b>First top-up:</b> +{settings.topup_first_bonus_pct}% "
+                     f"(up to {money(settings.topup_first_bonus_cap)})")
+    await safe_edit(call, "\n".join(blurb), topup_amounts_keyboard())
     await call.answer()
 
 
@@ -157,10 +162,12 @@ async def check_payment(call: CallbackQuery, callback_data: PayCheck) -> None:
         return
     if status == "paid":
         if await repo.mark_payment_paid(payment.id):
-            new_bal = await repo.credit(payment.user_id, payment.amount)
+            from services import billing
+            new_bal, bonus = await billing.credit_topup(payment.user_id, payment.amount)
+            bonus_line = f"\n🎁 Bonus: <b>+{money(bonus)}</b>" if bonus > 0 else ""
             await safe_edit(
                 call,
-                f"✅ <b>Payment received!</b>\n\n{money(payment.amount)} added.\n"
+                f"✅ <b>Payment received!</b>\n\n{money(payment.amount)} added.{bonus_line}\n"
                 f"New balance: <b>{money(new_bal)}</b>",
                 wallet_keyboard(settings.payments_enabled),
             )

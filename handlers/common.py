@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -48,15 +48,22 @@ async def main_menu_text(user_id: int) -> str:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject) -> None:
     await state.clear()
     admin = is_admin(message.from_user.id)
-    await repo.get_or_create_user(
+    _user, created = await repo.get_or_create_user(
         message.from_user.id,
         message.from_user.username,
         message.from_user.full_name,
         admin,
     )
+    # Referral attribution: only on first /start, only via ref_<uid> deep link.
+    payload = (command.args or "").strip()
+    if created and payload.startswith("ref_"):
+        try:
+            await repo.set_referrer(message.from_user.id, int(payload[4:]))
+        except ValueError:
+            pass
     await message.answer(
         await main_menu_text(message.from_user.id),
         reply_markup=main_menu(admin, settings.payments_enabled, settings.esim_enabled),

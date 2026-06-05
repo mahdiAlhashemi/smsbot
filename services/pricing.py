@@ -19,6 +19,7 @@ most the bot can ever pay, so profit >= ceiling * markup% > 0 on every order.
 """
 from __future__ import annotations
 
+import json
 from decimal import ROUND_CEILING, Decimal
 
 from config import settings
@@ -27,7 +28,43 @@ from db import repo
 _MARKUP_KEY = "markup_percent"        # SMS/rent commission %
 _BID_KEY = "bid_premium_percent"      # bid premium %
 _ESIM_KEY = "esim_commission_percent"  # eSIM commission %
+_OVERRIDES_KEY = "markup_overrides"   # JSON {"svc:tg": 45, "cc:187": 30}
 _CENT = Decimal("0.01")
+
+
+async def get_markup_overrides() -> dict:
+    """Per-service / per-country commission overrides (commission %, not price)."""
+    try:
+        raw = await repo.get_setting(_OVERRIDES_KEY)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not raw:
+        return {}
+    try:
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+async def set_markup_overrides(overrides: dict) -> None:
+    await repo.set_setting(_OVERRIDES_KEY, json.dumps(overrides))
+
+
+def commission_for(service, country, overrides: dict, global_commission: Decimal) -> Decimal:
+    """Resolve the commission for a buy: service override > country override >
+    global. `overrides` is the pre-fetched map (one read for a whole list)."""
+    if service is not None and f"svc:{service}" in overrides:
+        try:
+            return Decimal(str(overrides[f"svc:{service}"]))
+        except Exception:  # noqa: BLE001
+            pass
+    if country is not None and f"cc:{country}" in overrides:
+        try:
+            return Decimal(str(overrides[f"cc:{country}"]))
+        except Exception:  # noqa: BLE001
+            pass
+    return global_commission
 
 
 async def _get_pct(key: str, default: Decimal) -> Decimal:
@@ -82,16 +119,24 @@ async def buy_ceiling(default_cost: Decimal) -> Decimal:
     return _ceiling(default_cost, await get_bid_premium(), settings.min_bid)
 
 
-def sell_from(default_cost: Decimal, premium: Decimal, commission: Decimal, min_bid: Decimal) -> Decimal:
+def sell_from(default_cost: Decimal, premium: Decimal, commission: Decimal,
+              min_bid: Decimal, surge: Decimal = Decimal("0")) -> Decimal:
     """Smart customer price from pre-fetched knobs (sync — for pricing many rows
-    at once without an await per row). Mirrors sell_price()."""
-    return apply_markup(_ceiling(default_cost, premium, min_bid), commission)
+    at once without an await per row). `surge` is added to the commission for
+    out-of-stock/queued routes. Mirrors sell_price()."""
+    return apply_markup(_ceiling(default_cost, premium, min_bid), commission + surge)
 
 
-async def sell_price(default_cost: Decimal) -> Decimal:
-    """Price the CUSTOMER pays for an SMS number: bid ceiling + commission."""
+async def sell_price(default_cost: Decimal, service=None, country=None, queued: bool = False) -> Decimal:
+    """Price the CUSTOMER pays for an SMS number: bid ceiling + commission, where
+    the commission honours per-service/country overrides and a surge premium for
+    out-of-stock (queued) numbers (the bot must bid higher to source those)."""
     ceiling = await buy_ceiling(default_cost)
-    return apply_markup(ceiling, await get_markup())
+    overrides = await get_markup_overrides()
+    comm = commission_for(service, country, overrides, await get_markup())
+    if queued and settings.queued_surge_pct > 0:
+        comm += settings.queued_surge_pct
+    return apply_markup(ceiling, comm)
 
 
 async def commission_price(cost: Decimal) -> Decimal:

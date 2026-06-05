@@ -56,6 +56,7 @@ async def purchase(
     cost_hint: Decimal,
     hero: HeroSMSClient,
     catalog: Catalog,
+    queued: bool = False,
 ) -> Order:
     """Reserve (hold) the price, order a number, and persist the order.
 
@@ -66,7 +67,7 @@ async def purchase(
     if await repo.has_open_order_for(user_id, service, country):
         raise DuplicateOrder()
 
-    price = await pricing.sell_price(cost_hint)
+    price = await pricing.sell_price(cost_hint, service=service, country=country, queued=queued)
 
     # 1) Hold the funds (atomic; fails if spendable balance too low). NOT a charge.
     if not await repo.try_hold(user_id, price):
@@ -159,6 +160,8 @@ async def deliver_code(order: Order, code: str) -> bool:
             "uncharged, RECONCILE manually", order.id,
         )
     await repo.update_order(order.id, code=code)
+    if order.kind == "sms":
+        await repo.record_stat(order.service, order.country, delivered=True)
     log.info("Order %s RECEIVED, charged=%s amount=%s", order.id, charged, order.price)
     return True
 
@@ -194,6 +197,10 @@ async def close_unfilled(
                 await repo.set_hero_released(order.id, False)
     if release_customer_hold:
         await repo.release_hold(order.user_id, order.price)
+    # Count a genuine timeout (no code) against the route's success rate. User/
+    # provider cancellations are excluded — they aren't a delivery failure.
+    if final_status == Order.EXPIRED and order.kind == "sms":
+        await repo.record_stat(order.service, order.country, delivered=False)
     log.info("Order %s closed as %s (hold_released=%s)", order.id, final_status, release_customer_hold)
     return True
 

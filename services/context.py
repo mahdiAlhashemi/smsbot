@@ -22,6 +22,8 @@ class AppContext:
     esim: EsimAccessClient | None = None
     # eSIM catalog cache (set in bot.py alongside `esim`).
     esim_catalog: "object | None" = None
+    # Bot's @username (without @), resolved at startup — used for referral links.
+    bot_username: str = ""
 
 
 _ctx: AppContext | None = None

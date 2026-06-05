@@ -137,9 +137,14 @@ async def main() -> None:
         esim_catalog = EsimCatalog(esim)
     else:
         esim = esim_catalog = None
+    try:
+        me = await bot.get_me()
+        bot_username = me.username or ""
+    except Exception:  # noqa: BLE001
+        bot_username = ""
     set_ctx(AppContext(
         bot=bot, hero=hero, catalog=catalog, payments=payments,
-        esim=esim, esim_catalog=esim_catalog,
+        esim=esim, esim_catalog=esim_catalog, bot_username=bot_username,
     ))
 
     # Start pollers + Telegram polling immediately; provider connectivity checks

@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     min_bid: Decimal = Decimal("0")
     # eSIM commission (separate from SMS — eSIMs are fixed-price, no bid auction).
     esim_commission_percent: Decimal = Decimal("10")
+    # Top-up deposit bonuses (spend-only credit). First-ever paid top-up gets
+    # +first% (capped), and every top-up gets the ladder bonus by amount.
+    topup_first_bonus_pct: Decimal = Decimal("15")
+    topup_first_bonus_cap: Decimal = Decimal("2")
+    # "threshold:bonus%" pairs, biggest first wins. e.g. $100→+12%, $50→+7%, $20→+3%.
+    topup_bonus_tiers: str = "20:3,50:7,100:12"
+    # Surge: extra commission % added when a number is out-of-stock (queued ⏳),
+    # since the bot must bid higher to source it.
+    queued_surge_pct: Decimal = Decimal("25")
+    # Referral bounty (credit) to BOTH referrer and referee on the referee's first
+    # qualifying top-up (>= referral_min_topup).
+    referral_bonus: Decimal = Decimal("0.5")
+    referral_min_topup: Decimal = Decimal("5")
 
     # Crypto payments — Heleket (formerly Cryptomus)
     heleket_merchant: str = ""

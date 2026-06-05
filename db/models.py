@@ -33,11 +33,28 @@ class User(Base):
     language: Mapped[str] = mapped_column(String(8), default="en")
     total_spent: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Referrals: who invited this user, whether their signup bounty was paid, and
+    # how much this user has earned by referring others (for display).
+    referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ref_bonus_paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    ref_earnings: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
 
     @property
     def available(self) -> Decimal:
         """Spendable balance = balance minus funds held by open orders."""
         return (self.balance or Decimal("0")) - (self.held or Decimal("0"))
+
+
+class ServiceStat(Base):
+    """Per-(service,country) delivery stats — powers the success-rate badges.
+    Incremented when a code arrives (delivered) or an order expires (expired)."""
+
+    __tablename__ = "service_stats"
+
+    service: Mapped[str] = mapped_column(String(16), primary_key=True)
+    country: Mapped[str] = mapped_column(String(16), primary_key=True)
+    delivered: Mapped[int] = mapped_column(default=0)
+    expired: Mapped[int] = mapped_column(default=0)
 
 
 class Order(Base):

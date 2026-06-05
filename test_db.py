@@ -31,14 +31,16 @@ def check(name, cond):
 
 
 async def main():
-    # fresh db
-    if os.path.exists("_test_smsbot.db"):
-        os.remove("_test_smsbot.db")
+    # fresh db (also clear WAL/SHM sidecars)
+    for ext in ("", "-wal", "-shm"):
+        p = "_test_smsbot.db" + ext
+        if os.path.exists(p):
+            os.remove(p)
     await init_db()
 
     print("[users + balance]")
-    u = await repo.get_or_create_user(100, "alice", "Alice", False)
-    check("created", u.id == 100 and u.balance == Decimal("0"))
+    u, created = await repo.get_or_create_user(100, "alice", "Alice", False)
+    check("created", u.id == 100 and u.balance == Decimal("0") and created is True)
 
     await repo.credit(100, Decimal("10.00"))
     u = await repo.get_user(100)
@@ -167,14 +169,40 @@ async def main():
     check("stats completed", stats["completed"] == 1)
     check("stats profit", stats["profit"] == Decimal("0.20"))
 
+    print("[deposit bonus + referral]")
+    from services import billing  # noqa: PLC0415
+    await repo.get_or_create_user(300, "carol", "Carol", False)
+    await repo.set_referrer(300, 100)
+    check("referrer set once", await repo.set_referrer(300, 999) is False)  # already set
+    pay2 = await repo.create_payment(
+        user_id=300, provider="x", invoice_id="INV2", amount=Decimal("20.00"), asset="USDT",
+    )
+    await repo.mark_payment_paid(pay2.id)
+    new_bal, bonus = await billing.credit_topup(300, Decimal("20.00"))
+    # ladder 20->+3% = 0.60, first-deposit 15% of 20 = 3.00 capped at 2.00 => 2.60
+    check("deposit bonus = 2.60", bonus == Decimal("2.60"))
+    u3 = await repo.get_user(300)
+    check("referee credited + bounty (23.10)", u3.balance == Decimal("23.10"))
+    u1 = await repo.get_user(100)
+    check("referrer earned 0.50", u1.ref_earnings == Decimal("0.50"))
+    check("referral pays once", await repo.claim_referral_bonus(300) is None)
+
+    print("[service stats badges]")
+    await repo.record_stat("tg", "0", True)
+    await repo.record_stat("tg", "0", True)
+    await repo.record_stat("tg", "0", False)
+    smap = await repo.get_all_stats()
+    check("stats recorded", smap.get(("tg", "0")) == (2, 1))
+
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     # cleanup
     from db import engine
     await engine.dispose()
-    try:
-        os.remove("_test_smsbot.db")
-    except OSError:
-        pass
+    for ext in ("", "-wal", "-shm"):
+        try:
+            os.remove("_test_smsbot.db" + ext)
+        except OSError:
+            pass
     return FAIL
 
 

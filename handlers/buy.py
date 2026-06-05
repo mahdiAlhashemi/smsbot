@@ -74,13 +74,21 @@ async def _show_countries(call: CallbackQuery, service: str, page: int) -> None:
             back_button("buy"),
         )
         return
-    # Attach the customer-facing SMART price to each row (bid ceiling + commission)
-    # so the list matches the confirm screen exactly. Fetch the knobs once.
+    # Attach the customer-facing SMART price to each row (bid ceiling + per-service
+    # commission + surge on out-of-stock) so the list matches the confirm screen.
     from config import settings as _s
     premium = await pricing.get_bid_premium()
     commission = await pricing.get_markup()
+    overrides = await pricing.get_markup_overrides()
+    stats = await repo.get_all_stats()
     for r in rows:
-        r["sell"] = pricing.sell_from(r["cost"], premium, commission, _s.min_bid)
+        cc = r["country"]
+        comm = pricing.commission_for(service, cc, overrides, commission)
+        surge = _s.queued_surge_pct if r.get("count", 0) == 0 else Decimal("0")
+        r["sell"] = pricing.sell_from(r["cost"], premium, comm, _s.min_bid, surge)
+        d, e = stats.get((service, cc), (0, 0))
+        if d + e >= 5:  # show a success badge once there's a meaningful sample
+            r["rate"] = round(100 * d / (d + e))
     # Sort countries A → Z by name.
     rows = sorted(rows, key=lambda r: names.get(r["country"], "zzz").lower())
     name = await ctx.catalog.service_name(service)
@@ -121,7 +129,8 @@ async def confirm_screen(call: CallbackQuery, callback_data: CtyPick) -> None:
         await call.answer()
         return
 
-    price = await pricing.sell_price(match["cost"])
+    queued = match.get("count", 0) == 0
+    price = await pricing.sell_price(match["cost"], service=service, country=country, queued=queued)
     user = await repo.get_user(call.from_user.id)
     available = user.available if user else Decimal("0")
     can_afford = available >= price
@@ -130,11 +139,16 @@ async def confirm_screen(call: CallbackQuery, callback_data: CtyPick) -> None:
 
     from country_flags import flag
 
+    # Success badge from delivery history.
+    d, e = (await repo.get_all_stats()).get((service, country), (0, 0))
+    badge = f"\n✅ Success rate: <b>{round(100 * d / (d + e))}%</b>" if d + e >= 5 else ""
+    queued_line = ("\n⚡ Out of stock — we'll bid to source one (priority pricing)." if queued else "")
+
     text = (
         "🧾 <b>Confirm your order</b>\n\n"
         f"📲 Service: <b>{svc_name}</b>\n"
         f"🌍 Country: {flag(country)} <b>{cty_name}</b>\n"
-        f"💵 Price: <b>{money(price)}</b>\n"
+        f"💵 Price: <b>{money(price)}</b>{badge}{queued_line}\n"
         f"👛 Available: <b>{money(available)}</b>\n\n"
         "📩 Receive codes for <b>20 min</b>.\n"
         "❌ Cancellation available <b>after 2 min</b>.\n"
@@ -165,12 +179,13 @@ async def confirm_buy(call: CallbackQuery, callback_data: BuyConfirm) -> None:
         await safe_edit(call, "😔 That number just sold out. Pick another.", back_button("buy"))
         return
 
+    queued = match.get("count", 0) == 0
     try:
         order = await orders.purchase(
-            call.from_user.id, service, country, match["cost"], ctx.hero, ctx.catalog
+            call.from_user.id, service, country, match["cost"], ctx.hero, ctx.catalog, queued=queued
         )
     except orders.InsufficientFunds:
-        price = await pricing.sell_price(match["cost"])
+        price = await pricing.sell_price(match["cost"], service=service, country=country, queued=queued)
         user = await repo.get_user(call.from_user.id)
         avail = user.available if user else 0
         await safe_edit(

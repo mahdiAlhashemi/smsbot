@@ -274,6 +274,58 @@ def _user_card_kb(u):
     return b.as_markup()
 
 
+@router.callback_query(AdminAct.filter(F.action == "svcprice"))
+async def admin_svcprice_prompt(call: CallbackQuery, state: FSMContext) -> None:
+    if not _guard(call.from_user.id):
+        await call.answer("Not authorised.", show_alert=True)
+        return
+    overrides = await pricing.get_markup_overrides()
+    cur = ", ".join(f"{k}={v}%" for k, v in overrides.items()) or "none"
+    await state.set_state(AdminFlow.svcprice)
+    await safe_edit(
+        call,
+        "🎚 <b>Per-service price override</b>\n\n"
+        f"Current: <b>{cur}</b>\n\n"
+        "Set a higher commission on high-demand services/countries. Send "
+        "<code>key=percent</code> to set, or <code>key=</code> to clear.\n"
+        "• <code>tg=45</code> — Telegram commission 45%\n"
+        "• <code>cc:187=30</code> — country 187 (US) 30%\n"
+        "• <code>tg=</code> — clear the Telegram override",
+        back_button("admin"),
+    )
+    await call.answer()
+
+
+@router.message(AdminFlow.svcprice, F.text)
+async def admin_svcprice(message: Message, state: FSMContext) -> None:
+    if not _guard(message.from_user.id):
+        return
+    txt = message.text.strip()
+    if "=" not in txt:
+        await message.answer("Format: <code>key=percent</code> (e.g. <code>tg=45</code>).")
+        return
+    key, val = txt.split("=", 1)
+    key, val = key.strip(), val.strip()
+    if not key:
+        await message.answer("Missing key.")
+        return
+    if not key.startswith("cc:"):
+        key = "svc:" + key  # bare key = service code
+    overrides = await pricing.get_markup_overrides()
+    if val == "":
+        overrides.pop(key, None)
+    else:
+        try:
+            overrides[key] = str(Decimal(val.replace("%", "").replace(",", ".")))
+        except InvalidOperation:
+            await message.answer("Percent must be a number, e.g. 45.")
+            return
+    await pricing.set_markup_overrides(overrides)
+    await state.clear()
+    cur = ", ".join(f"{k}={v}%" for k, v in overrides.items()) or "none"
+    await message.answer(f"✅ Overrides: <b>{cur}</b>")
+
+
 @router.callback_query(AdminAct.filter(F.action == "finduser"))
 async def admin_finduser_prompt(call: CallbackQuery, state: FSMContext) -> None:
     if not _guard(call.from_user.id):

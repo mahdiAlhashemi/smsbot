@@ -8,10 +8,10 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, text, update
 
 from db import session_factory
-from db.models import Order, Payment, Setting, User
+from db.models import Order, Payment, ServiceStat, Setting, User
 
 
 def _now() -> dt.datetime:
@@ -21,10 +21,12 @@ def _now() -> dt.datetime:
 # ─── Users ──────────────────────────────────────────────────────────────────
 async def get_or_create_user(
     user_id: int, username: str | None, full_name: str | None, is_admin: bool
-) -> User:
+) -> tuple[User, bool]:
+    """Returns (user, created) — `created` is True only on first /start."""
     async with session_factory() as s:
         user = await s.get(User, user_id)
-        if user is None:
+        created = user is None
+        if created:
             user = User(
                 id=user_id, username=username, full_name=full_name, is_admin=is_admin
             )
@@ -36,7 +38,7 @@ async def get_or_create_user(
                 user.is_admin = True
         await s.commit()
         await s.refresh(user)
-        return user
+        return user, created
 
 
 async def get_user(user_id: int) -> User | None:
@@ -360,6 +362,106 @@ async def get_pending_payments() -> list[Payment]:
             select(Payment).where(Payment.status == Payment.PENDING)
         )
         return list(result.scalars().all())
+
+
+# ─── Top-ups / referrals ─────────────────────────────────────────────────────
+async def count_paid_payments(user_id: int) -> int:
+    async with session_factory() as s:
+        return await s.scalar(
+            select(func.count(Payment.id)).where(
+                Payment.user_id == user_id, Payment.status == Payment.PAID
+            )
+        ) or 0
+
+
+async def set_referrer(user_id: int, referrer_id: int) -> bool:
+    """Attribute user_id to referrer_id, but only if not already set and not self."""
+    if referrer_id == user_id:
+        return False
+    async with session_factory() as s:
+        res = await s.execute(
+            update(User)
+            .where(User.id == user_id, User.referred_by.is_(None))
+            .values(referred_by=referrer_id)
+        )
+        await s.commit()
+        return res.rowcount == 1
+
+
+async def claim_referral_bonus(user_id: int) -> int | None:
+    """Atomically mark the referee's signup bounty paid. Returns the referrer id
+    exactly once (so the bounty is paid once), or None."""
+    async with session_factory() as s:
+        u = await s.get(User, user_id)
+        if u is None or u.referred_by is None or u.ref_bonus_paid:
+            return None
+        res = await s.execute(
+            update(User)
+            .where(User.id == user_id, User.ref_bonus_paid == False)  # noqa: E712
+            .values(ref_bonus_paid=True)
+        )
+        await s.commit()
+        return u.referred_by if res.rowcount == 1 else None
+
+
+async def add_ref_earning(user_id: int, amount: Decimal) -> None:
+    """Credit a referrer's balance (spend-only) and record the earning."""
+    async with session_factory() as s:
+        await s.execute(
+            update(User).where(User.id == user_id).values(
+                balance=User.balance + amount, ref_earnings=User.ref_earnings + amount
+            )
+        )
+        await s.commit()
+
+
+async def get_referral_stats(user_id: int) -> tuple[int, Decimal]:
+    """(# of referred users whose bounty was paid, total earnings)."""
+    async with session_factory() as s:
+        cnt = await s.scalar(
+            select(func.count(User.id)).where(
+                User.referred_by == user_id, User.ref_bonus_paid == True  # noqa: E712
+            )
+        ) or 0
+        u = await s.get(User, user_id)
+        return cnt, (u.ref_earnings if u else Decimal("0"))
+
+
+# ─── Service delivery stats (success-rate badges) ────────────────────────────
+async def record_stat(service: str, country: str, delivered: bool) -> None:
+    col = "delivered" if delivered else "expired"
+    async with session_factory() as s:
+        await s.execute(
+            text(
+                f"INSERT INTO service_stats(service,country,delivered,expired) "
+                f"VALUES(:svc,:cc,:d,:e) "
+                f"ON CONFLICT(service,country) DO UPDATE SET {col}={col}+1"
+            ),
+            {"svc": service, "cc": country, "d": 1 if delivered else 0, "e": 0 if delivered else 1},
+        )
+        await s.commit()
+
+
+async def get_all_stats() -> dict:
+    """{(service, country): (delivered, expired)} for batch lookup in the picker."""
+    async with session_factory() as s:
+        res = await s.execute(select(ServiceStat))
+        return {(r.service, r.country): (r.delivered, r.expired) for r in res.scalars().all()}
+
+
+async def get_winback_candidates(min_balance: Decimal, idle_days: int, limit: int = 100) -> list[int]:
+    """Funded users (available >= min_balance) with no order activity in idle_days."""
+    cutoff = _now() - dt.timedelta(days=idle_days)
+    async with session_factory() as s:
+        recent = select(Order.user_id).where(Order.updated_at >= cutoff).distinct()
+        res = await s.execute(
+            select(User.id).where(
+                User.is_blocked == False,  # noqa: E712
+                (User.balance - User.held) >= min_balance,
+                ~User.id.in_(recent),
+            ).limit(limit)
+        )
+        return [r[0] for r in res.all()]
 
 
 # ─── Settings ───────────────────────────────────────────────────────────────

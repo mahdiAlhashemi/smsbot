@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import time
+from decimal import Decimal
 
 from aiogram import Bot
 
@@ -297,12 +298,15 @@ async def _poll_payments_once(bot: Bot, provider) -> None:
         if status == "paid":
             if await repo.mark_payment_paid(payment.id):
                 # Invoices are amount-locked (currency=USD, to_currency=USDT), so
-                # the requested amount is what the customer paid.
-                new_bal = await repo.credit(payment.user_id, payment.amount)
+                # the requested amount is what the customer paid. Apply bonuses +
+                # referral payout via the single credit path.
+                from services import billing
+                new_bal, bonus = await billing.credit_topup(payment.user_id, payment.amount)
+                bonus_line = f"\n🎁 Bonus: <b>+{money(bonus)}</b>" if bonus > 0 else ""
                 await _notify(
                     bot,
                     payment.user_id,
-                    f"✅ <b>Top-up received!</b>\n\n{money(payment.amount)} added.\n"
+                    f"✅ <b>Top-up received!</b>\n\n{money(payment.amount)} added.{bonus_line}\n"
                     f"New balance: <b>{money(new_bal)}</b>",
                     wallet_keyboard(settings.payments_enabled),
                 )
@@ -364,6 +368,51 @@ async def _check_provider_balances(bot: Bot, hero, esim) -> None:
             pass
 
 
+# ─── Win-back: re-engage funded but idle users (weekly cadence) ──────────────
+async def winback_poller(bot: Bot) -> None:
+    interval = 6 * 3600  # check every 6h; the sweep itself runs at most weekly
+    log.info("winback poller started (interval=%ss)", interval)
+    while True:
+        try:
+            await _winback_once(bot)
+        except Exception:  # noqa: BLE001
+            log.exception("winback iteration failed")
+        await asyncio.sleep(interval)
+
+
+async def _winback_once(bot: Bot) -> None:
+    last = await repo.get_setting("winback_last_run")
+    now = time.time()
+    if last:
+        try:
+            if now - float(last) < 7 * 86400:
+                return
+        except ValueError:
+            pass
+    await repo.set_setting("winback_last_run", str(now))
+    cands = await repo.get_winback_candidates(min_balance=Decimal("0.5"), idle_days=7, limit=100)
+    if not cands:
+        return
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from keyboards.callbacks import Nav
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📲 Buy a number", callback_data=Nav(to="buy"))
+    kb.adjust(1)
+    log.info("winback: nudging %s funded idle users", len(cands))
+    for uid in cands:
+        u = await repo.get_user(uid)
+        if u is None:
+            continue
+        await _notify(
+            bot, uid,
+            f"👋 You still have <b>{money(u.available)}</b> waiting in your NumberHub "
+            "wallet — grab a number or eSIM anytime!",
+            kb.as_markup(),
+        )
+        await asyncio.sleep(0.05)
+
+
 async def _notify(bot: Bot, user_id: int, text: str, reply_markup=None) -> None:
     try:
         await bot.send_message(user_id, text, reply_markup=reply_markup, disable_web_page_preview=True)
@@ -397,6 +446,7 @@ def start_pollers() -> list[asyncio.Task]:
         tasks.append(asyncio.create_task(payment_poller(ctx.bot, ctx.payments), name="payment_poller"))
     tasks.append(asyncio.create_task(
         balance_alert_poller(ctx.bot, ctx.hero, ctx.esim), name="balance_alert_poller"))
+    tasks.append(asyncio.create_task(winback_poller(ctx.bot), name="winback_poller"))
     for t in tasks:
         t.add_done_callback(_supervise)
     return tasks
