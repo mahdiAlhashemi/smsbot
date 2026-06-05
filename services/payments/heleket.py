@@ -72,7 +72,14 @@ class Heleket:
         await self._call("payment/services", {})
 
     async def make_invoice(self, amount: Decimal, order_id: str, callback: str | None = None) -> dict:
-        body = {"amount": str(amount), "currency": "USD", "order_id": order_id}
+        # Price fixed in USD, but the customer pays ONLY in USDT (to_currency locks
+        # the invoice to a single crypto — no coin picker on the payment page).
+        body = {
+            "amount": str(amount),
+            "currency": "USD",
+            "to_currency": "USDT",
+            "order_id": order_id,
+        }
         if callback:
             body["url_callback"] = callback
         r = await self._call("payment", body)
