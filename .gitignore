@@ -1,0 +1,14 @@
+.env
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+*.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+.idea/
+.vscode/
+*.network-response
+_esim_collection.json

@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override DB_URL so the database is stored on the mounted volume.
+      DB_URL: "sqlite+aiosqlite:///data/smsbot.db"
+    volumes:
+      - ./data:/app/data
