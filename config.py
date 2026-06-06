@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     support_contact: str = ""
     # Public channel @username shown to users (separate from post_channel's -100 id).
     channel_username: str = ""
+    # Public marketing/legal website (Terms, Privacy, Refund, etc.).
+    website_url: str = "https://numberhub.io"
     # Admin gets a DM when a provider's master balance drops below this (USD).
     low_balance_threshold: Decimal = Decimal("3")
 
@@ -125,12 +127,14 @@ class Settings(BaseSettings):
 
     @property
     def contact_footer(self) -> str:
-        """' 💬 Support: @x · 📢 Channel: @y' line for the bot description."""
+        """' 💬 Support: @x · 📢 Channel: @y · 🌐 site' line for the bot description."""
         parts = []
         if self.support_contact.strip():
             parts.append(f"💬 Support: {self.support_contact.strip()}")
         if self.channel_username.strip():
             parts.append(f"📢 Channel: {self.channel_username.strip()}")
+        if self.website_url.strip():
+            parts.append(f"🌐 {self.website_url.strip()}")
         return ("\n\n" + " · ".join(parts)) if parts else ""
 
 

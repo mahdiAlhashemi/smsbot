@@ -39,12 +39,14 @@ async def main_menu_text(user_id: int) -> str:
     if user and user.held and user.held > 0:
         bal_line += f"\nOn hold: {money(user.held)} · Available: <b>{money(user.available)}</b>"
     contact = ""
-    if settings.support_contact or settings.channel_username:
+    if settings.support_contact or settings.channel_username or settings.website_url.strip():
         bits = []
         if settings.support_contact:
             bits.append(f"💬 Support: {settings.support_contact}")
         if settings.channel_username:
             bits.append(f"📢 Channel: {settings.channel_username}")
+        if settings.website_url.strip():
+            bits.append(f"🌐 {settings.website_url.strip()}")
         contact = "\n\n" + "  ·  ".join(bits)
     return (
         "📱 <b>NumberHub — Numbers & eSIM</b>\n\n"
@@ -108,9 +110,19 @@ HELP_TEXT = (
 
 
 def help_text() -> str:
+    t = HELP_TEXT
+    site = settings.website_url.strip()
+    if site:
+        t += (
+            "\n\n🔒 <b>Trust & safety</b>\n"
+            "• No KYC for ordinary use — your SMS codes are deleted after delivery.\n"
+            "• Charged only when a code is delivered — no code, no charge, auto-refund.\n"
+            "• Crypto wallet — no card or bank details.\n"
+            f"• Terms, Privacy & Refund policy: {site}"
+        )
     if settings.support_url:
-        return HELP_TEXT + "\n\n💬 Need help? Tap <b>Contact support</b> below."
-    return HELP_TEXT + "\n\nNeed help? Contact the bot administrator."
+        return t + "\n\n💬 Need help? Tap <b>Contact support</b> below."
+    return t + "\n\nNeed help? Contact the bot administrator."
 
 
 def help_keyboard():
@@ -120,6 +132,10 @@ def help_keyboard():
         b.button(text="💬 Contact support", url=settings.support_url)
     if settings.channel_url:
         b.button(text="📢 Our channel", url=settings.channel_url)
+    site = settings.website_url.strip()
+    if site:
+        b.button(text="🌐 Website", url=site)
+        b.button(text="📜 Terms & policies", url=f"{site.rstrip('/')}/terms/")
     b.button(text="⬅️ Back", callback_data=Nav(to="main"))
     b.adjust(1)
     return b.as_markup()
@@ -142,7 +158,7 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(help_text(), reply_markup=help_keyboard())
+    await message.answer(help_text(), reply_markup=help_keyboard(), disable_web_page_preview=True)
 
 
 @router.message(Command("balance"))
