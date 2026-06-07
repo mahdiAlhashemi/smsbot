@@ -267,6 +267,18 @@ async def get_open_esim_orders() -> list[Order]:
         return list(result.scalars().all())
 
 
+async def get_open_email_orders() -> list[Order]:
+    """Open temp-email inboxes (the email poller checks them for new mail)."""
+    async with session_factory() as s:
+        result = await s.execute(
+            select(Order).where(
+                Order.status.in_([Order.WAITING, Order.RECEIVED]),
+                Order.kind == "email",
+            )
+        )
+        return list(result.scalars().all())
+
+
 async def has_open_order_for(user_id: int, service: str, country: str, kind: str = "sms") -> bool:
     """True if the user already has an open (pending/waiting/received) order of
     this kind for this exact service + country — used to block duplicate orders.

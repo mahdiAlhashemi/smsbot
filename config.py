@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     esim_secret_key: str = ""
     esim_base_url: str = "https://api.esimaccess.com"
 
+    # Temp email inboxes (Mail.tm, free keyless API). Charge-on-receive flat fee:
+    # held on creation, charged only when the first email arrives, released if none.
+    temp_email_enabled: bool = False
+    temp_email_price: Decimal = Decimal("0.15")
+    temp_email_window_min: int = 20
+
     # Pricing — "smart" two-knob model (see services/pricing.py):
     #   buy_ceiling    = max(default * (1 + bid_premium%), min_bid)  # bot bids this
     #   customer_price = buy_ceiling * (1 + markup%)                 # = commission

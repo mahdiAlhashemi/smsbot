@@ -22,11 +22,15 @@ from services.orders import InsufficientFunds, PurchaseError
 log = logging.getLogger(__name__)
 
 # (hours, label) — HeroSMS supports 24/72/168/720/1440/2160/4320; minimum 1 day.
+# Long-term durations let users keep a dedicated number for "account survival".
 RENT_DURATIONS = [
     (24, "1 day"),
     (72, "3 days"),
     (168, "1 week"),
     (720, "1 month"),
+    (1440, "2 months"),
+    (2160, "3 months"),
+    (4320, "6 months"),
 ]
 DURATION_LABELS = {h: lbl for h, lbl in RENT_DURATIONS}
 

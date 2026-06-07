@@ -14,6 +14,8 @@ from keyboards.callbacks import (
     BuyConfirm,
     CtyPage,
     CtyPick,
+    EmailAct,
+    EmailBuy,
     EsimAct,
     EsimBuy,
     EsimPick,
@@ -43,16 +45,20 @@ COUNTRIES_PER_PAGE = 90
 TOPUP_PRESETS = ["2", "5", "10", "20", "50", "100"]
 
 
-def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False) -> InlineKeyboardMarkup:
+def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False,
+              temp_email_enabled: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="📲 Buy OTP number", callback_data=Nav(to="buy"))
     b.button(text="📱 Rent number", callback_data=Nav(to="rent"))
     layout = [1]
+    row2 = 1  # Rent, plus any enabled product share the second row
     if esim_enabled:
         b.button(text="📡 eSIM data", callback_data=Nav(to="esim"))
-        layout.append(2)          # Rent + eSIM share a row
-    else:
-        layout.append(1)
+        row2 += 1
+    if temp_email_enabled:
+        b.button(text="📧 Temp email", callback_data=Nav(to="email"))
+        row2 += 1
+    layout.append(row2)
     b.button(text="👛 Wallet", callback_data=Nav(to="wallet"))
     b.button(text="🧾 My orders", callback_data=Nav(to="orders"))
     b.button(text="👤 Account", callback_data=Nav(to="account"))
@@ -371,6 +377,23 @@ def esim_order_keyboard(order: Order) -> InlineKeyboardMarkup:
         b.button(text="📊 Check usage", callback_data=EsimAct(action="usage", id=order.id))
         b.button(text="🔳 Resend QR", callback_data=EsimAct(action="qr", id=order.id))
         b.adjust(2)
+    b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
+    return b.as_markup()
+
+
+def email_buy_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="📧 Create inbox", callback_data=EmailBuy())
+    b.button(text="⬅️ Back", callback_data=Nav(to="main"))
+    b.adjust(1)
+    return b.as_markup()
+
+
+def email_order_keyboard(order: Order) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if order.status == Order.WAITING:
+        b.button(text="❌ Close inbox (no charge)", callback_data=EmailAct(action="cancel", id=order.id))
+        b.adjust(1)
     b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
     return b.as_markup()
 

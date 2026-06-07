@@ -236,6 +236,64 @@ async def _poll_esim_once(bot: Bot) -> None:
             log.exception("error provisioning eSIM order %s", order.id)
 
 
+# ─── Temp email poller: deliver verification emails, charge on first receive ──
+async def email_poller(bot: Bot) -> None:
+    interval = 8
+    log.info("email poller started (interval=%ss)", interval)
+    while True:
+        try:
+            await _poll_email_once(bot)
+        except Exception:  # noqa: BLE001
+            log.exception("email poller iteration failed")
+        await asyncio.sleep(interval)
+
+
+async def _poll_email_once(bot: Bot) -> None:
+    if not settings.temp_email_enabled:
+        return
+    from services import email_inbox as email_svc
+
+    for order in await repo.get_open_email_orders():
+        try:
+            if order.status == Order.WAITING and _now() >= _aware(order.expires_at):
+                if await email_svc.expire_email(order):
+                    await _sync_email_card(bot, await repo.get_order(order.id))
+                    await _notify(
+                        bot, order.user_id,
+                        f"⌛ Your temp inbox (order <b>#{order.id}</b>) expired with no email.\n\n"
+                        f"<i>⚡ You were not charged — the held <b>{money(order.price)}</b> was released.</i>",
+                    )
+                continue
+            event, new = await email_svc.poll_email(order)
+            if event:
+                await _sync_email_card(bot, await repo.get_order(order.id))
+                charged = f"\n\n💰 Charged: <b>{money(order.price)}</b>" if event == "charged" else ""
+                for m in new:
+                    code = m.get("code")
+                    body = f"🔑 <code>{code}</code>" if code else f"<code>{(m.get('text') or m.get('subject') or '')[:200]}</code>"
+                    await _notify(bot, order.user_id, f"📧 <b>New email</b> — inbox #{order.id}\n\n{body}{charged}")
+                    charged = ""  # show the charge note once
+            elif order.status == Order.WAITING:
+                await _sync_email_card(bot, order)  # tick the countdown
+        except Exception:  # noqa: BLE001
+            log.exception("error polling email order %s", order.id)
+
+
+async def _sync_email_card(bot: Bot, order: Order) -> None:
+    if not order or not order.chat_id or not order.message_id:
+        return
+    from services import email_inbox as email_svc
+    from keyboards.menus import email_order_keyboard
+    try:
+        await bot.edit_message_text(
+            email_svc.format_email_card(order), chat_id=order.chat_id,
+            message_id=order.message_id, reply_markup=email_order_keyboard(order),
+            disable_web_page_preview=True,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ─── Queue poller: fulfil PENDING orders by retrying getNumber ───────────────
 async def queue_poller(bot: Bot, hero: HeroSMSClient) -> None:
     log.info("queue poller started (interval=%ss, give-up=%smin)",
@@ -446,6 +504,8 @@ def start_pollers() -> list[asyncio.Task]:
     ]
     if ctx.esim is not None:
         tasks.append(asyncio.create_task(esim_poller(ctx.bot), name="esim_poller"))
+    if settings.temp_email_enabled:
+        tasks.append(asyncio.create_task(email_poller(ctx.bot), name="email_poller"))
     if ctx.payments is not None:
         tasks.append(asyncio.create_task(payment_poller(ctx.bot, ctx.payments), name="payment_poller"))
     tasks.append(asyncio.create_task(

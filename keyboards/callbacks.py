@@ -116,3 +116,13 @@ class EsimBuy(CallbackData, prefix="eb"):
 class EsimAct(CallbackData, prefix="ea"):
     action: str        # qr | usage | done
     id: int
+
+
+# ─── Temp email flow ─────────────────────────────────────────────────────────
+class EmailBuy(CallbackData, prefix="emb"):
+    provider: str = "mailtm"
+
+
+class EmailAct(CallbackData, prefix="ema"):
+    action: str        # cancel
+    id: int
