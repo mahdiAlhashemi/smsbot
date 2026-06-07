@@ -35,26 +35,31 @@ async def safe_edit(call: CallbackQuery, text: str, reply_markup=None) -> None:
 
 async def main_menu_text(user_id: int) -> str:
     user = await repo.get_user(user_id)
-    bal_line = f"Your balance: <b>{money(user.balance if user else 0)}</b>"
+    rule = "─" * 16
+    bal_block = f"💰 Balance: <b>{money(user.balance if user else 0)}</b>"
     if user and user.held and user.held > 0:
-        bal_line += f"\nOn hold: {money(user.held)} · Available: <b>{money(user.available)}</b>"
-    contact = ""
-    if settings.support_contact or settings.channel_username or settings.website_url.strip():
-        bits = []
-        if settings.support_contact:
-            bits.append(f"💬 Support: {settings.support_contact}")
-        if settings.channel_username:
-            bits.append(f"📢 Channel: {settings.channel_username}")
-        if settings.website_url.strip():
-            bits.append(f"🌐 {settings.website_url.strip()}")
-        contact = "\n\n" + "  ·  ".join(bits)
+        bal_block += (
+            f"\n🔒 On hold: {money(user.held)}"
+            f"\n✅ Available: <b>{money(user.available)}</b>"
+        )
+    contact_lines = []
+    if settings.support_contact:
+        contact_lines.append(f"💬 Support: {settings.support_contact}")
+    if settings.channel_username:
+        contact_lines.append(f"📢 Channel: {settings.channel_username}")
+    if settings.website_url.strip():
+        site = settings.website_url.strip().replace("https://", "").replace("http://", "").rstrip("/")
+        contact_lines.append(f"🌐 {site}")
+    contact = ("\n\n" + rule + "\n" + "\n".join(contact_lines)) if contact_lines else ""
     return (
-        "📱 <b>NumberHub — Numbers & eSIM</b>\n\n"
-        f"{bal_line}\n\n"
-        "Buy a temporary number to receive OTP verification codes for 800+ "
-        "services in 190+ countries.\n"
-        "<i>You only pay when the code actually arrives.</i>"
-        f"{contact}\n\nChoose an option below 👇"
+        "📱  <b>NumberHub</b> — Numbers &amp; eSIM\n"
+        f"{rule}\n"
+        f"{bal_block}\n\n"
+        "Buy a temporary number to receive <b>OTP codes</b> for "
+        "<b>800+</b> services across <b>190+</b> countries.\n\n"
+        "<i>⚡ You only pay when the code actually arrives.</i>"
+        f"{contact}\n\n"
+        "👇  <b>Choose an option below</b>"
     )
 
 
@@ -78,6 +83,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
     await message.answer(
         await main_menu_text(message.from_user.id),
         reply_markup=main_menu(admin, settings.payments_enabled, settings.esim_enabled),
+        disable_web_page_preview=True,
     )
 
 
@@ -153,6 +159,7 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
     await message.answer(
         await main_menu_text(message.from_user.id),
         reply_markup=main_menu(is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled),
+        disable_web_page_preview=True,
     )
 
 
