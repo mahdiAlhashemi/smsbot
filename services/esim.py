@@ -58,6 +58,30 @@ class _TTL:
         return self._value
 
 
+def _throttled(p: EsimPackage) -> bool:
+    """The provider lists a full-speed AND a throttled 'FUP' variant (capped to
+    e.g. 1Mbps after the fair-use point) of the same plan — same data/price but
+    worse. We treat the FUP one as the lower-ranked of an otherwise-identical pair."""
+    return "fup" in f"{p.name} {p.slug} {p.speed}".lower()
+
+
+def _dedupe_packages(pkgs: list[EsimPackage]) -> list[EsimPackage]:
+    """Collapse plans that render to the SAME button (same coverage + data +
+    validity) into one, keeping the best: full-speed first, then cheapest.
+
+    Fixes the 'duplicate item' the user sees (e.g. Iraq 2GB/Day appears twice —
+    a full-speed plan and a 'FUP1Mbps' plan at the same price look identical
+    because the button label doesn't show the speed)."""
+    best: dict = {}
+    for p in pkgs:
+        key = (p.scope_badge, p.gb, p.duration, p.duration_unit)
+        rank = (0 if _throttled(p) else 1, -p.cost)
+        cur = best.get(key)
+        if cur is None or rank > (0 if _throttled(cur) else 1, -cur.cost):
+            best[key] = p
+    return list(best.values())
+
+
 class EsimCatalog:
     """TTL cache over the eSIM Access catalog (regions + per-location packages)."""
 
@@ -85,6 +109,9 @@ class EsimCatalog:
         async with ttl._lock:
             if not ttl.fresh():
                 pkgs = await self._client.packages(location_code=location_code)
+                # Drop duplicate-looking plans (full-speed vs throttled FUP variant
+                # at the same data/validity/price render as identical buttons).
+                pkgs = _dedupe_packages(pkgs)
                 # Group by coverage (local → regional → global), then read like a
                 # tariff menu within each: small → large data, shorter → longer,
                 # cheaper first. Local plans (what most people want) surface first.
