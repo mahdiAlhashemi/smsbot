@@ -45,6 +45,8 @@ async def main_menu_text(user_id: int) -> str:
     contact_lines = []
     if settings.support_contact:
         contact_lines.append(f"💬 Support: {settings.support_contact}")
+    if settings.support_email.strip():
+        contact_lines.append(f"📧 {settings.support_email.strip()}")
     if settings.channel_username:
         contact_lines.append(f"📢 Channel: {settings.channel_username}")
     if settings.website_url.strip():
@@ -130,8 +132,12 @@ def help_text() -> str:
             f"• Terms, Privacy &amp; Refund policy: {site}"
         )
     if settings.support_url:
-        return t + "\n\n💬 Need help? Tap <b>Contact support</b> below."
-    return t + "\n\n💬 Need help? Contact the bot administrator."
+        t += "\n\n💬 Need help? Tap <b>Contact support</b> below."
+    else:
+        t += "\n\n💬 Need help? Contact the bot administrator."
+    if settings.support_email.strip():
+        t += f"\n📧 Email: {settings.support_email.strip()}"
+    return t
 
 
 def help_keyboard():

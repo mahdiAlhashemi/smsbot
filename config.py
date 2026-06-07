@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     channel_username: str = ""
     # Public marketing/legal website (Terms, Privacy, Refund, etc.).
     website_url: str = "https://numberhub.io"
+    # Public support email shown to users.
+    support_email: str = "info@numberhub.io"
     # Admin gets a DM when a provider's master balance drops below this (USD).
     low_balance_threshold: Decimal = Decimal("3")
 
@@ -131,6 +133,8 @@ class Settings(BaseSettings):
         parts = []
         if self.support_contact.strip():
             parts.append(f"💬 Support: {self.support_contact.strip()}")
+        if self.support_email.strip():
+            parts.append(f"📧 {self.support_email.strip()}")
         if self.channel_username.strip():
             parts.append(f"📢 Channel: {self.channel_username.strip()}")
         if self.website_url.strip():
