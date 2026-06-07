@@ -27,21 +27,21 @@ log = logging.getLogger(__name__)
 
 
 class PurchaseError(Exception):
-    user_message = "Could not get a number. Please try again."
+    user_message = "Couldn't get a number right now. Please try again."
 
 
 class InsufficientFunds(PurchaseError):
-    user_message = "Not enough balance. Please top up your wallet."
+    user_message = "Not enough <b>balance</b>. Please 💳 top up your wallet."
 
 
 class OutOfStock(PurchaseError):
-    user_message = "No numbers available for this service/country right now."
+    user_message = "No numbers available for this service and country right now."
 
 
 class DuplicateOrder(PurchaseError):
     user_message = (
-        "You already have an active order for this service and country. "
-        "Finish or cancel it first (see 📦 My orders)."
+        "You already have an <b>active order</b> for this service and country.\n"
+        "Finish or cancel it first in 📦 <b>My orders</b>."
     )
 
 

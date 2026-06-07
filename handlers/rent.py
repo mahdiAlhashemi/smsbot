@@ -36,9 +36,11 @@ async def open_rent(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await safe_edit(
         call,
-        "📱 <b>Rent a number</b>\n\nRent a number for a period and receive "
-        "<b>many OTP codes</b> the whole time (great for ongoing use).\n\n"
-        "Choose how long you want it:",
+        "📲 <b>Rent a number</b>\n"
+        "────────────────\n"
+        "Keep the same number and receive <b>many OTP codes</b> for the whole "
+        "period — great for ongoing use.\n\n"
+        "👇 <b>Choose how long you need it</b>",
         rent_durations_keyboard(),
     )
     await call.answer()
@@ -51,17 +53,19 @@ async def _show_rent_countries(call: CallbackQuery, h: int, page: int) -> None:
         data = await ctx.hero.rent_services(h, _PROBE_COUNTRY)
         names = await ctx.catalog.countries()
     except Exception:  # noqa: BLE001
-        await safe_edit(call, "⚠️ Could not load rent countries. Try again.", back_button("rent"))
+        await safe_edit(call, "⚠️ Couldn't load rent countries. Please try again.", back_button("rent"))
         return
     ids = list({int(v) for v in (data.get("countries") or {}).values()})
     if not ids:
-        await safe_edit(call, "😔 No rent countries available right now.", back_button("rent"))
+        await safe_edit(call, "ℹ️ No rent countries available right now.", back_button("rent"))
         return
     # Sort countries A → Z by name.
     ids.sort(key=lambda cid: names.get(str(cid), "zzz").lower())
     await safe_edit(
         call,
-        f"📱 <b>Rent — {DURATION_LABELS.get(h, str(h) + 'h')}</b>\n\nChoose a country:",
+        f"📲 <b>Rent — {DURATION_LABELS.get(h, str(h) + 'h')}</b>\n"
+        "────────────────\n"
+        "👇 <b>Choose a country</b>",
         rent_countries_keyboard(h, ids, names, page),
     )
 
@@ -100,10 +104,10 @@ async def _show_rent_services(call: CallbackQuery, h: int, country: str, page: i
     try:
         rows = await ctx.hero.rent_service_prices(h, country)
     except Exception:  # noqa: BLE001
-        await safe_edit(call, "⚠️ Could not load rent prices. Try again.", back_button("rent"))
+        await safe_edit(call, "⚠️ Couldn't load rent prices. Please try again.", back_button("rent"))
         return
     if not rows:
-        await safe_edit(call, "😔 No rentals available for this country. Pick another.", back_button("rent"))
+        await safe_edit(call, "ℹ️ No rentals available for this country. Pick another.", back_button("rent"))
         return
     # Show popular apps available for rent here; fall back to the cheapest if none.
     popular = [r for r in rows if r["code"] in _POPULAR_CODES]
@@ -115,8 +119,10 @@ async def _show_rent_services(call: CallbackQuery, h: int, country: str, page: i
     cty = (await ctx.catalog.countries()).get(country, country)
     await safe_edit(
         call,
-        f"📱 <b>Rent {DURATION_LABELS.get(h)} — {flag(country)} {cty}</b>\n\n"
-        "Choose what the number is for:\n<i>name • price for the whole period</i>",
+        f"📲 <b>Rent {DURATION_LABELS.get(h)} — {flag(country)} {cty}</b>\n"
+        "────────────────\n"
+        "👇 <b>Choose what the number is for</b>\n"
+        "<i>💡 name • price for the whole period</i>",
         rent_services_keyboard(h, country, display, names, page),
     )
 
@@ -138,7 +144,7 @@ async def confirm_rent(call: CallbackQuery, callback_data: RentConf) -> None:
     await call.answer()
     cost = await _rent_cost(ctx, h, country, code)
     if cost is None:
-        await safe_edit(call, "😔 That just sold out. Pick another.", back_button("rent"))
+        await safe_edit(call, "ℹ️ That just sold out. Pick another.", back_button("rent"))
         return
     price = await pricing.commission_price(cost)
     user = await repo.get_user(call.from_user.id)
@@ -147,19 +153,21 @@ async def confirm_rent(call: CallbackQuery, callback_data: RentConf) -> None:
     names = await _service_names(ctx)
     cty = (await ctx.catalog.countries()).get(country, country)
     text = (
-        "🧾 <b>Confirm rental</b>\n\n"
-        f"📱 Service: <b>{short(names.get(code, code.upper()), 30)}</b>\n"
+        "🧾 <b>Confirm rental</b>\n"
+        "────────────────\n"
+        f"🧩 Service: <b>{short(names.get(code, code.upper()), 30)}</b>\n"
         f"🌍 Country: {flag(country)} <b>{cty}</b>\n"
-        f"📅 Duration: <b>{DURATION_LABELS.get(h)}</b>\n"
+        f"⏱️ Duration: <b>{DURATION_LABELS.get(h)}</b>\n"
         f"💵 Price: <b>{money(price)}</b>\n"
-        f"👛 Available: <b>{money(available)}</b>\n\n"
-        "📩 Receive codes during the whole rental period.\n"
-        "❌ Cancellation (full refund) available <b>after 2 min</b> and "
+        f"💰 Available: <b>{money(available)}</b>\n"
+        "────────────────\n"
+        "🔑 Receive OTP codes for the whole rental period.\n"
+        "❌ Full-refund cancellation: <b>after 2 min</b> and "
         "<b>no later than 20 min</b>.\n\n"
-        "<i>Paid upfront for the whole period. The number receives all its OTP codes during that time.</i>"
+        "<i>⚡ Paid upfront for the whole period — the number receives all its OTP codes during that time.</i>"
     )
     if not can_afford:
-        text += f"\n\n⚠️ Not enough balance — you need {money(price - available)} more."
+        text += f"\n\n⚠️ <b>Not enough balance</b> — you need {money(price - available)} more."
     await safe_edit(call, text, rent_confirm_keyboard(h, country, code, can_afford=can_afford))
 
 
@@ -170,7 +178,7 @@ async def do_rent(call: CallbackQuery, callback_data: RentBuy) -> None:
     await call.answer("Renting…")
     cost = await _rent_cost(ctx, h, country, code)
     if cost is None:
-        await safe_edit(call, "😔 That service just sold out. Pick another.", back_button("rent"))
+        await safe_edit(call, "ℹ️ That service just sold out. Pick another.", back_button("rent"))
         return
     try:
         order = await rent_svc.rent_purchase(call.from_user.id, code, country, h, cost, ctx.hero, ctx.catalog)
@@ -178,7 +186,7 @@ async def do_rent(call: CallbackQuery, callback_data: RentBuy) -> None:
         await safe_edit(call, f"⛔ {exc.user_message}", back_button("orders"))
         return
     except order_svc.InsufficientFunds:
-        await safe_edit(call, "💸 Not enough balance. Top up your wallet and try again.", back_button("wallet"))
+        await safe_edit(call, "💳 Not enough balance — top up your wallet and try again.", back_button("wallet"))
         return
     except order_svc.PurchaseError as exc:
         await safe_edit(call, f"⚠️ {exc.user_message}", back_button("rent"))
@@ -193,7 +201,7 @@ async def do_rent(call: CallbackQuery, callback_data: RentBuy) -> None:
 async def finish_rent_cb(call: CallbackQuery, callback_data: RentAct) -> None:
     order = await repo.get_order(callback_data.id)
     if order is None or order.user_id != call.from_user.id:
-        await call.answer("Order not found.", show_alert=True)
+        await call.answer("❌ Order not found.", show_alert=True)
         return
     await rent_svc.finish_rent(order, get_ctx().hero)
     order = await repo.get_order(order.id)
@@ -201,14 +209,14 @@ async def finish_rent_cb(call: CallbackQuery, callback_data: RentAct) -> None:
         await call.message.edit_text(rent_svc.format_rent_card(order), reply_markup=rent_order_keyboard(order))
     except Exception:  # noqa: BLE001
         pass
-    await call.answer("Rental finished.")
+    await call.answer("✅ Rental finished.")
 
 
 @router.callback_query(RentAct.filter(F.action == "cancel"))
 async def cancel_rent_cb(call: CallbackQuery, callback_data: RentAct) -> None:
     order = await repo.get_order(callback_data.id)
     if order is None or order.user_id != call.from_user.id:
-        await call.answer("Order not found.", show_alert=True)
+        await call.answer("❌ Order not found.", show_alert=True)
         return
     from utils import rent_cancel_state
 
@@ -233,6 +241,6 @@ async def cancel_rent_cb(call: CallbackQuery, callback_data: RentAct) -> None:
         pass
     await call.answer(
         f"✅ Rental cancelled — {money(order.price)} refunded to your balance." if ok
-        else "Could not cancel — it may have just ended.",
+        else "⚠️ Could not cancel — it may have just ended.",
         show_alert=True,
     )

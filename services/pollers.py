@@ -69,7 +69,9 @@ async def _handle_order(bot: Bot, hero: HeroSMSClient, order: Order) -> None:
                 await _sync_card(bot, fresh)  # auto-refresh the card in place
                 await _notify(
                     bot, order.user_id,
-                    f"💬 <b>Code received:</b> <code>{code}</code>  (charged {money(order.price)})",
+                    f"🔑 <b>Code received</b>\n\n"
+                    f"<code>{code}</code>\n\n"
+                    f"💰 Charged: <b>{money(order.price)}</b>",
                 )
             return
         if status == "CANCEL":
@@ -113,8 +115,8 @@ async def _close_unfilled(
         await _notify(
             bot,
             order.user_id,
-            f"⌛ Your number for order #{order.id} {reason} with no code.\n"
-            f"You were <b>not charged</b> (the held {money(order.price)} was released).",
+            f"❌ Your number for order <b>#{order.id}</b> {reason} with no code.\n\n"
+            f"<i>⚡ You were not charged — the held <b>{money(order.price)}</b> was released.</i>",
         )
 
 
@@ -138,7 +140,7 @@ async def _poll_rents_once(bot: Bot, hero: HeroSMSClient) -> None:
             if _now() >= _aware(order.expires_at):
                 await rent_svc.finish_rent(order, hero)
                 await _sync_rent_card(bot, await repo.get_order(order.id))
-                await _notify(bot, order.user_id, f"⌛ Your rental #{order.id} has ended.")
+                await _notify(bot, order.user_id, f"✅ <b>Rental #{order.id}</b> has ended.")
                 continue
             new = await rent_svc.poll_rent_sms(order, hero)
             if new:
@@ -146,7 +148,7 @@ async def _poll_rents_once(bot: Bot, hero: HeroSMSClient) -> None:
                 for s in new:
                     await _notify(
                         bot, order.user_id,
-                        f"💬 <b>New OTP</b> on rental #{order.id}:\n<code>{s.get('text', '')}</code>",
+                        f"🔑 <b>New OTP</b> — rental #{order.id}\n\n<code>{s.get('text', '')}</code>",
                     )
             else:
                 # Re-render in place so the active-time countdown ticks and the
@@ -198,13 +200,13 @@ async def _poll_esim_once(bot: Bot) -> None:
                 if _now() >= _aware(order.expires_at):
                     await _notify(
                         bot, order.user_id,
-                        f"⏳ Your eSIM (order #{order.id}) is taking longer than usual to "
-                        "prepare. We're still on it — the QR will appear here automatically. "
-                        "If it doesn't arrive soon, please contact support.",
+                        f"⏳ <b>eSIM order #{order.id}</b> is taking longer than usual to prepare.\n\n"
+                        "We're still on it — the QR will appear here automatically.\n"
+                        "<i>ℹ️ If it doesn't arrive soon, please contact support.</i>",
                     )
                     for aid in settings.admin_id_list:
                         await _notify(bot, aid,
-                                      f"⚠️ eSIM order #{order.id} not provisioned past deadline — check esimaccess.")
+                                      f"⚠️ <b>eSIM order #{order.id}</b> not provisioned past deadline — check esimaccess.")
                     await repo.update_order(order.id, expires_at=_now() + dt.timedelta(hours=6))
                 continue
             fresh = await repo.get_order(order.id)
@@ -223,14 +225,13 @@ async def _poll_esim_once(bot: Bot) -> None:
                     try:
                         await bot.send_photo(
                             fresh.chat_id, profile.qr_code_url,
-                            caption=("📲 <b>Scan to install</b> — "
-                                     f"{profile.package_name or 'your eSIM'}\n"
-                                     "Settings → Mobile/Cellular → Add eSIM → Use QR Code."),
+                            caption=(f"📡 <b>Scan to install</b> — <b>{profile.package_name or 'your eSIM'}</b>\n\n"
+                                     "<i>💡 Settings → Mobile/Cellular → Add eSIM → Use QR Code.</i>"),
                         )
                     except Exception:  # noqa: BLE001
                         pass
             await _notify(bot, order.user_id,
-                          f"✅ Your eSIM (order #{order.id}) is ready — QR code sent above.")
+                          f"✅ <b>eSIM order #{order.id}</b> is ready — QR code sent above.")
         except Exception:  # noqa: BLE001
             log.exception("error provisioning eSIM order %s", order.id)
 
@@ -258,8 +259,8 @@ async def _poll_queue_once(bot: Bot, hero: HeroSMSClient) -> None:
                     await _sync_card(bot, await repo.get_order(order.id))
                     await _notify(
                         bot, order.user_id,
-                        f"😔 Sorry, we couldn't find a number for order #{order.id} in time.\n"
-                        f"You were <b>not charged</b> ({money(order.price)} released). Try again later.",
+                        f"❌ Sorry, we couldn't find a number for order <b>#{order.id}</b> in time.\n\n"
+                        f"<i>⚡ You were not charged — <b>{money(order.price)}</b> released. Try again later.</i>",
                     )
                 continue
             if await order_svc.try_fulfill_pending(order, hero):
@@ -267,8 +268,8 @@ async def _poll_queue_once(bot: Bot, hero: HeroSMSClient) -> None:
                 await _sync_card(bot, fresh)  # auto-refresh the queued card in place
                 await _notify(
                     bot, order.user_id,
-                    f"✅ <b>Your number is ready:</b> <code>{fresh.phone}</code>\n"
-                    "Waiting for the OTP code — it appears automatically.",
+                    f"📲 <b>Your number is ready</b>\n\n<code>{fresh.phone}</code>\n\n"
+                    "<i>⏳ Waiting for the OTP code — it appears automatically.</i>",
                 )
         except Exception:  # noqa: BLE001
             log.exception("error fulfilling pending order %s", order.id)
@@ -306,8 +307,9 @@ async def _poll_payments_once(bot: Bot, provider) -> None:
                 await _notify(
                     bot,
                     payment.user_id,
-                    f"✅ <b>Top-up received!</b>\n\n{money(payment.amount)} added.{bonus_line}\n"
-                    f"New balance: <b>{money(new_bal)}</b>",
+                    f"✅ <b>Top-up received!</b>\n\n"
+                    f"💳 Added: <b>{money(payment.amount)}</b>{bonus_line}\n"
+                    f"💰 New balance: <b>{money(new_bal)}</b>",
                     wallet_keyboard(settings.payments_enabled),
                 )
         elif status == "expired":
@@ -349,8 +351,10 @@ async def _check_provider_balances(bot: Bot, hero, esim) -> None:
         for aid in admins:
             await _notify(
                 bot, aid,
-                f"⚠️ <b>Low {name} balance: {money(bal)}</b> (alert below {money(threshold)}).\n"
-                "Top it up to avoid failed orders.",
+                f"⚠️ <b>Low {name} balance</b>\n\n"
+                f"💰 Balance: <b>{money(bal)}</b>\n"
+                f"ℹ️ Alert below: {money(threshold)}\n\n"
+                "<i>💡 Top it up to avoid failed orders.</i>",
             )
 
     try:
@@ -406,8 +410,8 @@ async def _winback_once(bot: Bot) -> None:
             continue
         await _notify(
             bot, uid,
-            f"👋 You still have <b>{money(u.available)}</b> waiting in your NumberHub "
-            "wallet — grab a number or eSIM anytime!",
+            f"👋 You still have <b>{money(u.available)}</b> waiting in your NumberHub wallet.\n\n"
+            "<i>💡 Grab a number or eSIM anytime!</i>",
             kb.as_markup(),
         )
         await asyncio.sleep(0.05)

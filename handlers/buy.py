@@ -36,7 +36,7 @@ async def _show_services(call: CallbackQuery, page: int) -> None:
         return
     await safe_edit(
         call,
-        "📲 <b>Choose a service</b>\n\nPick the app you need a code for:",
+        "🧩 <b>Choose a service</b>\n\n👇 Pick the app you need a code for:",
         services_keyboard(services, page),
     )
 
@@ -96,8 +96,8 @@ async def _show_countries(call: CallbackQuery, service: str, page: int) -> None:
     await safe_edit(
         call,
         f"🌍 <b>{name}</b> — choose a country\n\n"
-        f"<i>Name • price</i> — {in_stock} in stock now.\n"
-        "⏳ = none free this second; we'll search &amp; deliver it automatically.",
+        f"<i>Name • price</i> — <b>{in_stock}</b> in stock now.\n"
+        "<i>⏳ = none free right now; we'll search &amp; deliver it automatically.</i>",
         countries_keyboard(service, rows, names, page),
     )
 
@@ -142,22 +142,24 @@ async def confirm_screen(call: CallbackQuery, callback_data: CtyPick) -> None:
     # Success badge from delivery history.
     d, e = (await repo.get_all_stats()).get((service, country), (0, 0))
     badge = f"\n✅ Success rate: <b>{round(100 * d / (d + e))}%</b>" if d + e >= 5 else ""
-    queued_line = ("\n⚡ Out of stock — we'll bid to source one (priority pricing)." if queued else "")
+    queued_line = ("\n<i>⚡ Out of stock — we'll bid to source one (priority pricing).</i>" if queued else "")
 
     text = (
-        "🧾 <b>Confirm your order</b>\n\n"
-        f"📲 Service: <b>{svc_name}</b>\n"
+        "🧾 <b>Confirm your order</b>\n"
+        "────────────────\n"
+        f"🧩 Service: <b>{svc_name}</b>\n"
         f"🌍 Country: {flag(country)} <b>{cty_name}</b>\n"
         f"💵 Price: <b>{money(price)}</b>{badge}{queued_line}\n"
-        f"👛 Available: <b>{money(available)}</b>\n\n"
+        f"💰 Available: <b>{money(available)}</b>\n"
+        "────────────────\n"
         "📩 Receive codes for <b>20 min</b>.\n"
-        "❌ Cancellation available <b>after 2 min</b>.\n"
-        "↩️ No code received → funds return to your balance.\n\n"
-        "<i>{} is held now and charged only when a code arrives. "
-        "No code = no charge.</i>".format(money(price))
+        "❌ Cancel available <b>after 2 min</b>.\n"
+        "↩️ No code → funds return to your balance.\n\n"
+        "<i>⚡ {} is held now and charged only when a code arrives — "
+        "no code, no charge.</i>".format(money(price))
     )
     if not can_afford:
-        text += f"\n\n⚠️ Not enough balance — you need {money(price - available)} more."
+        text += f"\n\n⚠️ <b>Not enough balance</b> — you need <b>{money(price - available)}</b> more."
     await safe_edit(call, text, confirm_keyboard(service, country, can_afford=can_afford))
     await call.answer()
 
@@ -190,8 +192,10 @@ async def confirm_buy(call: CallbackQuery, callback_data: BuyConfirm) -> None:
         avail = user.available if user else 0
         await safe_edit(
             call,
-            f"💸 <b>Not enough balance.</b>\n\nPrice: {money(price)}\nAvailable: {money(avail)}\n\n"
-            "Top up your wallet and try again.",
+            "💸 <b>Not enough balance</b>\n\n"
+            f"💵 Price: <b>{money(price)}</b>\n"
+            f"💰 Available: <b>{money(avail)}</b>\n\n"
+            "💳 Top up your wallet and try again.",
             _topup_or_back_kb(),
         )
         return
@@ -219,13 +223,16 @@ async def confirm_buy(call: CallbackQuery, callback_data: BuyConfirm) -> None:
         window = (f"{qt // 60} hour" + ("s" if qt // 60 != 1 else "")) if qt >= 60 else f"{qt} minutes"
         await safe_edit(
             call,
-            "🧾 <b>Order received — searching for your number…</b>\n\n"
-            f"📲 {order.service_name} — {order.country_name}\n"
-            f"💵 Price: <b>{money(order.price)}</b>\n\n"
-            "No numbers are free right now, so I'm searching for one for you. "
-            f"I'll keep trying for up to <b>{window}</b> — your number will appear here "
+            "🧾 <b>Order received — searching for your number…</b>\n"
+            "────────────────\n"
+            f"🧩 Service: <b>{order.service_name}</b>\n"
+            f"🌍 Country: <b>{order.country_name}</b>\n"
+            f"💵 Price: <b>{money(order.price)}</b>\n"
+            "────────────────\n"
+            "⏳ No numbers are free right now, so we're searching for one. "
+            f"We'll keep trying for up to <b>{window}</b> — your number appears here "
             "automatically the moment one is found. You can cancel anytime.\n\n"
-            f"<i>{money(order.price)} is on hold; you're charged only when the OTP code arrives. "
+            f"<i>⚡ {money(order.price)} is on hold; you're charged only when the OTP code arrives. "
             "If no number is found, it's released — no charge.</i>",
             order_keyboard(order),
         )
@@ -234,8 +241,8 @@ async def confirm_buy(call: CallbackQuery, callback_data: BuyConfirm) -> None:
     await safe_edit(
         call,
         format_order(order)
-        + f"\n\n⏳ Waiting for the OTP code — it appears here automatically.\n"
-        f"<i>{money(order.price)} is on hold; you're charged only when the code arrives.</i>",
+        + f"\n\n⏳ <b>Waiting for the OTP code</b> — it appears here automatically.\n"
+        f"<i>⚡ {money(order.price)} is on hold; you're charged only when the code arrives.</i>",
         order_keyboard(order),
     )
 
@@ -259,7 +266,7 @@ async def start_search(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(BuyFlow.searching)
     await safe_edit(
         call,
-        "🔍 <b>Search service</b>\n\nType a service name or code (e.g. <code>telegram</code>, "
+        "🔍 <b>Search a service</b>\n\n👇 Type a service name or code (e.g. <code>telegram</code>, "
         "<code>wa</code>, <code>openai</code>):",
         back_button("buy"),
     )
@@ -271,7 +278,7 @@ async def do_search(message: Message, state: FSMContext) -> None:
     ctx = get_ctx()
     results = await ctx.catalog.search_services(message.text, limit=20)
     if not results:
-        await message.answer("No services matched. Try another word.")
+        await message.answer("😔 No services matched. Try another word.")
         return
     await state.clear()
     b = InlineKeyboardBuilder()

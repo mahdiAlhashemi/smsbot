@@ -47,7 +47,7 @@ async def _ordered_regions() -> list[dict]:
 async def open_esim(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     if get_ctx().esim is None:
-        await safe_edit(call, "📶 eSIM data plans are not available right now.", back_button("main"))
+        await safe_edit(call, "📡 <b>eSIM data plans</b> are not available right now.", back_button("main"))
         await call.answer()
         return
     await _show_regions(call, 0)
@@ -65,9 +65,10 @@ async def _show_regions(call: CallbackQuery, page: int) -> None:
         return
     await safe_edit(
         call,
-        "📶 <b>eSIM data plans</b>\n\n"
+        "📡 <b>eSIM data plans</b>\n"
+        "────────────────\n"
         "Instant data eSIM for your trip — delivered as a QR code, no physical SIM.\n\n"
-        "Choose a destination:",
+        "👇 <b>Choose a destination</b>",
         esim_regions_keyboard(regions, page),
     )
 
@@ -99,10 +100,11 @@ async def show_packages(call: CallbackQuery, callback_data: EsimReg) -> None:
     name = await _catalog().region_name(code)
     await safe_edit(
         call,
-        f"📶 <b>{iso_flag(code)} {name}</b> — choose a data plan\n\n"
+        f"📡 <b>{iso_flag(code)} {name}</b> — choose a data plan\n"
+        "────────────────\n"
         "🏠 = this country only (cheapest)\n"
         "🌍 = regional · 🌐 = global (the number = countries covered)\n\n"
-        "<i>coverage · data · validity · price</i>",
+        "<i>💡 coverage · data · validity · price</i>",
         esim_packages_keyboard(code, packages, callback_data.page),
     )
 
@@ -129,19 +131,21 @@ async def confirm_esim(call: CallbackQuery, callback_data: EsimPick) -> None:
         cov_line = f"🌍 <b>{n} countries</b> — {shown}{more}"
     unit = pkg.duration_unit.lower()
     text = (
-        "🧾 <b>Confirm your eSIM</b>\n\n"
-        f"📶 Plan: <b>{pkg.name}</b>\n"
+        "🧾 <b>Confirm your eSIM</b>\n"
+        "────────────────\n"
+        f"🧩 Plan: <b>{pkg.name}</b>\n"
         f"🌍 Destination: {iso_flag(region)} <b>{name}</b>\n"
         f"📦 Data: <b>{pkg.gb}</b>\n"
-        f"📅 Validity: <b>{pkg.duration} {unit}{'s' if pkg.duration != 1 else ''}</b> (from first use)\n"
+        f"⏱️ Validity: <b>{pkg.duration} {unit}{'s' if pkg.duration != 1 else ''}</b> (from first use)\n"
         f"📡 Coverage: {cov_line}\n"
+        "────────────────\n"
         f"💵 Price: <b>{money(price)}</b>\n"
-        f"👛 Available: <b>{money(available)}</b>\n\n"
-        "<i>Delivered instantly as a QR code. Paid upfront. Needs an "
-        "eSIM-capable phone; install over Wi-Fi before you travel.</i>"
+        f"💰 Available: <b>{money(available)}</b>\n\n"
+        "<i>⚡ Delivered instantly as a QR code. Paid upfront. Needs an "
+        "eSIM-capable phone — install over Wi-Fi before you travel.</i>"
     )
     if not can_afford:
-        text += f"\n\n⚠️ Not enough balance — you need {money(price - available)} more."
+        text += f"\n\n⚠️ <b>Not enough balance</b> — you need <b>{money(price - available)}</b> more."
     await safe_edit(call, text, esim_confirm_keyboard(region, pkg_code, can_afford=can_afford))
 
 
@@ -160,7 +164,9 @@ async def buy_esim(call: CallbackQuery, callback_data: EsimBuy) -> None:
         price = await pricing.esim_sell_price(pkg.cost)
         await safe_edit(
             call,
-            f"💸 <b>Not enough balance.</b>\n\nPrice: {money(price)}\n\nTop up and try again.",
+            f"💸 <b>Not enough balance</b>\n\n"
+            f"💵 Price: <b>{money(price)}</b>\n\n"
+            "💳 Top up and try again.",
             back_button("wallet"),
         )
         return
@@ -188,9 +194,9 @@ async def _send_qr(call_or_msg, order) -> None:
         await msg.answer_photo(
             qr,
             caption=(
-                f"📲 <b>Scan to install</b> — {prof.get('pkg', 'your eSIM')}\n"
-                "Settings → Mobile/Cellular → Add eSIM → Use QR Code.\n"
-                "<i>Install over Wi-Fi.</i>"
+                f"📲 <b>Scan to install</b> — <b>{prof.get('pkg', 'your eSIM')}</b>\n\n"
+                "Settings → Mobile/Cellular → Add eSIM → Use QR Code.\n\n"
+                "<i>💡 Install over Wi-Fi.</i>"
             ),
         )
     except Exception:  # noqa: BLE001 — bad/unreachable QR url; the text card still has manual codes

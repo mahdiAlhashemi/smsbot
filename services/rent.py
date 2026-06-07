@@ -153,8 +153,9 @@ def format_rent_card(order: Order) -> str:
     lines = [
         f"📱 <b>Rental — {order.service_name or order.service}</b> "
         f"({flag(order.country)} {order.country_name or order.country})",
-        f"📞 Number: <code>{order.phone}</code>  <i>(tap to copy)</i>",
-        f"💵 Paid: <b>{money(order.price)}</b>",
+        "────────────────",
+        f"📲 Number: <code>{order.phone}</code>  <i>(tap to copy)</i>",
+        f"💳 Paid: <b>{money(order.price)}</b>",
     ]
     exp = order.expires_at
     if exp:
@@ -164,24 +165,24 @@ def format_rent_card(order: Order) -> str:
         if secs > 0:
             h, rem = divmod(secs, 3600)
             m = rem // 60
-            lines.append(f"⏱ Active for: <b>{h}h {m}m</b>")
+            lines.append(f"⏱️ Active for: <b>{h}h {m}m</b>")
         else:
-            lines.append("⏱ <i>Rental ended</i>")
+            lines.append("⏱️ <i>Rental ended</i>")
     # Cancellation window status (after 2 min, before 20 min → refundable).
     if order.status in (Order.WAITING, Order.RECEIVED):
         from utils import rent_cancel_state
 
         state, wsecs = rent_cancel_state(order)
         if state == "locked":
-            lines.append(f"❌ Cancel/refund opens in <b>{wsecs}s</b>")
+            lines.append(f"🔒 Cancel / refund opens in <b>{wsecs}s</b>")
         elif state == "open":
             wm, ws = divmod(wsecs, 60)
-            lines.append(f"💸 Cancel for full refund — <b>{wm}m {ws}s</b> left")
+            lines.append(f"💸 Cancel for a full refund — <b>{wm}m {ws}s</b> left")
     sms = stored_sms(order)
     if sms:
         from utils import extract_code, short
 
-        lines.append(f"\n💬 <b>Received OTP / messages ({len(sms)}):</b>")
+        lines.append(f"\n🔑 <b>Received OTP / messages ({len(sms)})</b>")
         for s in sms[-5:]:
             txt = s.get("text", "")
             code = extract_code(txt)

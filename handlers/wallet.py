@@ -32,12 +32,12 @@ async def open_wallet(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     user = await repo.get_user(call.from_user.id)
     bal = user.balance if user else Decimal("0")
-    text = [f"👛 <b>Wallet</b>\n\nBalance: <b>{money(bal)}</b>"]
+    text = [f"👛 <b>Wallet</b>\n────────────────\n💰 Balance: <b>{money(bal)}</b>"]
     if user and user.held and user.held > 0:
-        text.append(f"On hold (open orders): {money(user.held)}")
-        text.append(f"Available to spend: <b>{money(user.available)}</b>")
+        text.append(f"🔒 On hold: <b>{money(user.held)}</b>")
+        text.append(f"✅ Available: <b>{money(user.available)}</b>")
     if not settings.payments_enabled:
-        text.append("\n<i>Automatic top-up is disabled. Ask an admin to add funds.</i>")
+        text.append("\n<i>💡 Automatic top-up is disabled — ask an admin to add funds.</i>")
     await safe_edit(call, "\n".join(text), wallet_keyboard(settings.payments_enabled))
     await call.answer()
 
@@ -47,7 +47,7 @@ async def topup_menu(call: CallbackQuery) -> None:
     if not settings.payments_enabled:
         await call.answer("Top-up is disabled.", show_alert=True)
         return
-    blurb = ["➕ <b>Top up</b>\n\nChoose an amount (in USD, paid in USDT):"]
+    blurb = ["💳 <b>Top up</b>\n────────────────\n👇 Choose an amount (USD, paid in <b>USDT</b>):"]
     from services.billing import _parse_tiers
     tiers = _parse_tiers(settings.topup_bonus_tiers)
     if tiers:
@@ -65,7 +65,8 @@ async def topup_custom(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(WalletFlow.custom_amount)
     await safe_edit(
         call,
-        f"✏️ Enter the amount to top up in USD (minimum {money(settings.min_topup)}):",
+        f"✏️ <b>Custom amount</b>\n\nEnter how much to top up in <b>USD</b>.\n\n"
+        f"<i>💡 Minimum {money(settings.min_topup)}.</i>",
         back_button("wallet"),
     )
     await call.answer()
@@ -77,13 +78,13 @@ async def topup_custom_amount(message: Message, state: FSMContext) -> None:
     try:
         amount = Decimal(raw).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
-        await message.answer("Please send a valid number, e.g. 7.50")
+        await message.answer("⚠️ Please send a valid number, e.g. <b>7.50</b>")
         return
     if amount < settings.min_topup:
-        await message.answer(f"Minimum top-up is {money(settings.min_topup)}.")
+        await message.answer(f"⚠️ Minimum top-up is <b>{money(settings.min_topup)}</b>.")
         return
     if amount > Decimal("10000"):
-        await message.answer("That amount is too large.")
+        await message.answer("⚠️ That amount is too large.")
         return
     await state.clear()
     await _create_invoice(message, message.from_user.id, amount)
@@ -105,7 +106,7 @@ async def _create_invoice(message: Message, user_id: int, amount: Decimal, edit_
     ctx = get_ctx()
     provider = ctx.payments
     if provider is None:
-        await message.answer("Top-up is currently disabled.")
+        await message.answer("⚠️ Top-up is currently disabled.")
         return
 
     # Create the payment row first so its id can be the (unique) order_id.
@@ -129,10 +130,11 @@ async def _create_invoice(message: Message, user_id: int, amount: Decimal, edit_
     await repo.set_payment_invoice(payment.id, inv["invoice_id"])
     pay_url = inv["pay_url"]
     text = (
-        "🧾 <b>Invoice created</b>\n\n"
-        f"Amount: <b>{money(amount)}</b> (pay in <b>USDT</b>)\n\n"
-        "Tap <b>Pay now</b>, pay with <b>USDT</b>, then press <b>I have paid</b>.\n"
-        "<i>Your balance is also credited automatically within ~1 minute.</i>"
+        "🧾 <b>Invoice created</b>\n"
+        "────────────────\n"
+        f"💳 Amount: <b>{money(amount)}</b>\n\n"
+        "Tap <b>Pay now</b>, pay in <b>USDT</b>, then press <b>I have paid</b>.\n\n"
+        "<i>⚡ Your balance is also credited automatically within ~1 minute.</i>"
     )
     kb = payment_keyboard(pay_url, payment.id)
     if edit_call is not None:
@@ -146,19 +148,19 @@ async def check_payment(call: CallbackQuery, callback_data: PayCheck) -> None:
     ctx = get_ctx()
     payment = await repo.get_payment(callback_data.id)
     if payment is None or payment.user_id != call.from_user.id:
-        await call.answer("Payment not found.", show_alert=True)
+        await call.answer("❌ Payment not found.", show_alert=True)
         return
     if payment.status == Payment.PAID:
-        await call.answer("Already credited ✅")
+        await call.answer("✅ Already credited")
         return
     provider = ctx.payments
     if provider is None:
-        await call.answer("Payments disabled.", show_alert=True)
+        await call.answer("⚠️ Payments disabled.", show_alert=True)
         return
     try:
         status = await provider.invoice_status(payment.invoice_id, f"nh{payment.id}")
     except Exception:  # noqa: BLE001
-        await call.answer("Could not check right now, try again.", show_alert=True)
+        await call.answer("⚠️ Couldn't check right now — try again.", show_alert=True)
         return
     if status == "paid":
         if await repo.mark_payment_paid(payment.id):
@@ -167,12 +169,13 @@ async def check_payment(call: CallbackQuery, callback_data: PayCheck) -> None:
             bonus_line = f"\n🎁 Bonus: <b>+{money(bonus)}</b>" if bonus > 0 else ""
             await safe_edit(
                 call,
-                f"✅ <b>Payment received!</b>\n\n{money(payment.amount)} added.{bonus_line}\n"
-                f"New balance: <b>{money(new_bal)}</b>",
+                f"✅ <b>Payment received!</b>\n\n"
+                f"💳 Credited: <b>{money(payment.amount)}</b>{bonus_line}\n"
+                f"💰 New balance: <b>{money(new_bal)}</b>",
                 wallet_keyboard(settings.payments_enabled),
             )
-            await call.answer("Balance updated ✅")
+            await call.answer("✅ Balance updated")
         else:
-            await call.answer("Already credited ✅")
+            await call.answer("✅ Already credited")
     else:
-        await call.answer("Not paid yet. Complete the payment, then retry.", show_alert=True)
+        await call.answer("⏳ Not paid yet — complete the payment, then retry.", show_alert=True)

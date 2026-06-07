@@ -27,11 +27,12 @@ async def open_account(call: CallbackQuery) -> None:
     user = await repo.get_user(uid)
     orders = await repo.get_user_orders(uid, limit=12)
 
-    lines = ["👤 <b>Your account</b>\n"]
+    lines = ["👤 <b>Your account</b>", "────────────────"]
     bal = user.balance if user else Decimal("0")
-    lines.append(f"💼 Balance: <b>{money(bal)}</b>")
+    lines.append(f"💰 Balance: <b>{money(bal)}</b>")
     if user and user.held and user.held > 0:
-        lines.append(f"🔒 On hold: {money(user.held)} · Available: <b>{money(user.available)}</b>")
+        lines.append(f"🔒 On hold: <b>{money(user.held)}</b>")
+        lines.append(f"✅ Available: <b>{money(user.available)}</b>")
     spent = user.total_spent if user else Decimal("0")
     lines.append(f"💸 Total spent: <b>{money(spent)}</b>")
 
@@ -41,15 +42,18 @@ async def open_account(call: CallbackQuery) -> None:
     link = ""
     if ctx.bot_username:
         link = f"https://t.me/{ctx.bot_username}?start=ref_{uid}"
+        lines.append("────────────────")
+        lines.append("🎁 <b>Invite &amp; earn</b>")
         lines.append(
-            f"\n🎁 <b>Invite &amp; earn</b>\nYou and your friend BOTH get "
-            f"<b>{money(settings.referral_bonus)}</b> when they top up "
-            f"{money(settings.referral_min_topup)}+."
+            f"You and your friend BOTH get <b>{money(settings.referral_bonus)}</b> "
+            f"when they top up <b>{money(settings.referral_min_topup)}+</b>."
         )
-        lines.append(f"👥 Invited: <b>{ref_cnt}</b> · Earned: <b>{money(ref_earn)}</b>")
+        lines.append(f"👥 Invited: <b>{ref_cnt}</b>")
+        lines.append(f"💰 Earned: <b>{money(ref_earn)}</b>")
         lines.append(f"🔗 <code>{link}</code>")
 
-    lines.append("\n<b>Recent history</b>")
+    lines.append("────────────────")
+    lines.append("🧾 <b>Recent history</b>")
     if not orders:
         lines.append("<i>No orders yet — tap 📲 Buy number to start.</i>")
     else:
@@ -58,7 +62,7 @@ async def open_account(call: CallbackQuery) -> None:
             label = STATUS_LABELS.get(o.status, o.status)
             extra = f" · <code>{o.code}</code>" if o.code and o.kind == "sms" else ""
             name = o.service_name or o.service
-            lines.append(f"{icon} #{o.id} {name} — {money(o.price)} — {label}{extra}")
+            lines.append(f"{icon} #{o.id} <b>{name}</b> — <b>{money(o.price)}</b> — {label}{extra}")
 
     # Keyboard: one-tap buy-again for recent SMS combos + share invite.
     b = InlineKeyboardBuilder()

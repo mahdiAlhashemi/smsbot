@@ -49,12 +49,12 @@ def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False
     b.button(text="📱 Rent number", callback_data=Nav(to="rent"))
     layout = [1]
     if esim_enabled:
-        b.button(text="📶 eSIM data", callback_data=Nav(to="esim"))
+        b.button(text="📡 eSIM data", callback_data=Nav(to="esim"))
         layout.append(2)          # Rent + eSIM share a row
     else:
         layout.append(1)
     b.button(text="👛 Wallet", callback_data=Nav(to="wallet"))
-    b.button(text="📦 My orders", callback_data=Nav(to="orders"))
+    b.button(text="🧾 My orders", callback_data=Nav(to="orders"))
     b.button(text="👤 Account", callback_data=Nav(to="account"))
     b.button(text="ℹ️ Help", callback_data=Nav(to="help"))
     layout += [2, 2]             # Wallet+Orders, Account+Help
@@ -150,7 +150,7 @@ def order_keyboard(order: Order) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     if order.status == Order.WAITING:
         # No refresh button — the card auto-updates from the background poller.
-        b.button(text="🔄 Replace number", callback_data=OrderAct(action="replace", id=order.id))
+        b.button(text="🔁 Replace number", callback_data=OrderAct(action="replace", id=order.id))
         # HeroSMS allows cancellation only AFTER 2 min. Show a live countdown
         # until then; the poller re-renders this card so it unlocks on its own.
         from utils import activation_cancel_in
@@ -166,12 +166,12 @@ def order_keyboard(order: Order) -> InlineKeyboardMarkup:
     elif order.status == Order.RECEIVED:
         # Show the price — each extra code is a fresh charge, so make the cost visible.
         b.button(
-            text=f"🔄 Another code ({money(order.price)})",
+            text=f"🔁 Another code ({money(order.price)})",
             callback_data=OrderAct(action="another", id=order.id),
         )
-        b.button(text="✔️ Done", callback_data=OrderAct(action="done", id=order.id))
+        b.button(text="✅ Done", callback_data=OrderAct(action="done", id=order.id))
         b.adjust(2)
-    b.row(InlineKeyboardButton(text="📦 My orders", callback_data=Nav(to="orders").pack()))
+    b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
     return b.as_markup()
 
 
@@ -197,7 +197,7 @@ def topup_amounts_keyboard() -> InlineKeyboardMarkup:
 def payment_keyboard(pay_url: str, payment_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="💳 Pay now", url=pay_url)
-    b.button(text="🔄 I have paid", callback_data=PayCheck(id=payment_id))
+    b.button(text="✅ I have paid", callback_data=PayCheck(id=payment_id))
     b.button(text="⬅️ Wallet", callback_data=Nav(to="wallet"))
     b.adjust(1)
     return b.as_markup()
@@ -284,7 +284,7 @@ def rent_order_keyboard(order: Order) -> InlineKeyboardMarkup:
         else:  # window closed — keep it for the period; finishing gives no refund
             b.button(text="🛑 Finish rental", callback_data=RentAct(action="finish", id=order.id))
         b.adjust(1)
-    b.row(InlineKeyboardButton(text="📦 My orders", callback_data=Nav(to="orders").pack()))
+    b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
     return b.as_markup()
 
 
@@ -371,7 +371,7 @@ def esim_order_keyboard(order: Order) -> InlineKeyboardMarkup:
         b.button(text="📊 Check usage", callback_data=EsimAct(action="usage", id=order.id))
         b.button(text="🔳 Resend QR", callback_data=EsimAct(action="qr", id=order.id))
         b.adjust(2)
-    b.row(InlineKeyboardButton(text="📦 My orders", callback_data=Nav(to="orders").pack()))
+    b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
     return b.as_markup()
 
 
@@ -381,7 +381,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     b.button(text="💵 Give balance", callback_data=AdminAct(action="give"))
     b.button(text="📈 OTP commission %", callback_data=AdminAct(action="markup"))
     b.button(text="🎯 Bid premium %", callback_data=AdminAct(action="bid"))
-    b.button(text="📶 eSIM commission %", callback_data=AdminAct(action="esimcomm"))
+    b.button(text="📡 eSIM commission %", callback_data=AdminAct(action="esimcomm"))
     b.button(text="🎚 Service price", callback_data=AdminAct(action="svcprice"))
     b.button(text="🔍 Find user", callback_data=AdminAct(action="finduser"))
     b.button(text="📣 Broadcast", callback_data=AdminAct(action="broadcast"))

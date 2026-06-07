@@ -25,20 +25,20 @@ async def list_orders(call: CallbackQuery) -> None:
     open_orders = await repo.get_user_open_orders(uid)
     history = await repo.get_user_orders(uid, limit=10)
 
-    lines = ["📦 <b>Your orders</b>\n"]
+    lines = ["🧾 <b>Your Orders</b>", "────────────────"]
     if not history:
-        lines.append("You have no orders yet. Tap 📲 Buy number to get started.")
+        lines.append("<i>You have no orders yet.</i>\n\n👇 Tap 📲 <b>Buy number</b> to get started.")
     else:
-        lines.append("<b>Recent history:</b>")
+        lines.append("<b>Recent history</b>\n")
         for o in history:
             label = STATUS_LABELS.get(o.status, o.status)
-            code = f" • code <code>{o.code}</code>" if o.code else ""
+            code = f" — 🔑 <code>{o.code}</code>" if o.code else ""
             lines.append(
-                f"#{o.id} {o.service_name or o.service} ({o.country_name or o.country}) "
-                f"— {money(o.price)} — {label}{code}"
+                f"🧾 #{o.id} <b>{o.service_name or o.service}</b> "
+                f"({o.country_name or o.country}) — <b>{money(o.price)}</b> — {label}{code}"
             )
     if open_orders:
-        lines.append(f"\n⏳ {len(open_orders)} active order(s) below 👇")
+        lines.append(f"\n⏳ <b>{len(open_orders)}</b> active order(s) below 👇")
 
     await safe_edit(call, "\n".join(lines), back_button("main"))
     for o in open_orders:
@@ -60,7 +60,7 @@ async def list_orders(call: CallbackQuery) -> None:
 async def _owned(call: CallbackQuery, order_id: int) -> Order | None:
     order = await repo.get_order(order_id)
     if order is None or order.user_id != call.from_user.id:
-        await call.answer("Order not found.", show_alert=True)
+        await call.answer("❌ Order not found.", show_alert=True)
         return None
     return order
 
@@ -71,7 +71,7 @@ async def refresh_order(call: CallbackQuery, callback_data: OrderAct) -> None:
     if order is None:
         return
     if not order.is_open:
-        await call.answer("This order is closed.")
+        await call.answer("ℹ️ This order is already closed.")
         await _rerender(call, order)
         return
     ctx = get_ctx()
@@ -82,12 +82,12 @@ async def refresh_order(call: CallbackQuery, callback_data: OrderAct) -> None:
             await _rerender(call, order)
             await call.answer("✅ Number found!")
         else:
-            await call.answer("Still searching — no number free yet. I'll keep trying.")
+            await call.answer("⏳ Still searching — no number free yet. I'll keep trying.")
         return
     try:
         status, code = await ctx.hero.get_status(order.activation_id)
     except Exception:  # noqa: BLE001
-        await call.answer("Could not reach HeroSMS, try again.", show_alert=True)
+        await call.answer("⚠️ Couldn't reach the provider — please try again.", show_alert=True)
         return
     if status == "OK" and code:
         # Charge-on-receive happens here (atomically, once).
@@ -96,7 +96,7 @@ async def refresh_order(call: CallbackQuery, callback_data: OrderAct) -> None:
         await _rerender(call, order)
         await call.answer(f"✅ Code received! Charged {money(order.price)}.")
     else:
-        await call.answer("No code yet — please wait.")
+        await call.answer("⏳ No code yet — please wait.")
 
 
 @router.callback_query(OrderAct.filter(F.action == "cancel"))
@@ -111,7 +111,7 @@ async def cancel_order_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
         locked = activation_cancel_in(order)
         if locked > 0:
             await call.answer(
-                f"⏳ Cancellation is available 2 minutes after the number is issued "
+                f"⏳ Cancellation unlocks 2 minutes after the number is issued "
                 f"— {locked}s left.",
                 show_alert=True,
             )
@@ -121,9 +121,9 @@ async def cancel_order_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
     if ok:
         order = await repo.get_order(order.id)
         await _rerender(call, order)
-        await call.answer(f"Cancelled. Not charged — {money(order.price)} released.", show_alert=True)
+        await call.answer(f"✅ Canceled — not charged. {money(order.price)} released.", show_alert=True)
     else:
-        await call.answer("Can't cancel now (a code may have arrived).", show_alert=True)
+        await call.answer("⚠️ Can't cancel now — a code may have arrived.", show_alert=True)
 
 
 @router.callback_query(OrderAct.filter(F.action == "replace"))
@@ -132,13 +132,13 @@ async def replace_order_cb(call: CallbackQuery, callback_data: OrderAct) -> None
     if order is None:
         return
     if order.status != Order.WAITING:
-        await call.answer("Replace is only available while waiting for a code.", show_alert=True)
+        await call.answer("🔁 Replace is only available while waiting for a code.", show_alert=True)
         return
     ctx = get_ctx()
-    await call.answer("Replacing number…")
+    await call.answer("🔁 Replacing number…")
     new_order = await order_svc.replace_number(order, ctx.hero, ctx.catalog)
     if new_order is None:
-        await call.answer("Couldn't replace right now — please try again.", show_alert=True)
+        await call.answer("⚠️ Couldn't replace right now — please try again.", show_alert=True)
         return
     await _rerender(call, new_order)
 
@@ -152,18 +152,18 @@ async def another_code_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
     # before any money is touched (defence-in-depth with the atomic gate in
     # request_another_code).
     if order.status != Order.RECEIVED:
-        await call.answer("That request isn't available anymore.", show_alert=True)
+        await call.answer("ℹ️ That request isn't available anymore.", show_alert=True)
         return
     ctx = get_ctx()
     result = await order_svc.request_another_code(order, ctx.hero)
     if result == order_svc.ANOTHER_OK:
         order = await repo.get_order(order.id)
         await _rerender(call, order)
-        await call.answer(f"Requested another code ({money(order.price)} held) — please wait.")
+        await call.answer(f"⏳ Requested another code — {money(order.price)} held. Please wait.")
     elif result == order_svc.ANOTHER_INSUFFICIENT:
-        await call.answer("Not enough balance for another code. Top up first.", show_alert=True)
+        await call.answer("💳 Not enough balance for another code. Top up first.", show_alert=True)
     else:
-        await call.answer("Could not request another code.", show_alert=True)
+        await call.answer("⚠️ Could not request another code.", show_alert=True)
 
 
 @router.callback_query(OrderAct.filter(F.action == "done"))
@@ -175,7 +175,7 @@ async def done_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
     await order_svc.complete_order(order, ctx.hero)
     order = await repo.get_order(order.id)
     await _rerender(call, order)
-    await call.answer("Order completed. Thank you!")
+    await call.answer("✅ Order completed. Thank you!")
 
 
 async def _rerender(call: CallbackQuery, order: Order) -> None:

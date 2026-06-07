@@ -152,8 +152,8 @@ async def esim_purchase(
         low = f"{exc.code} {msg}".lower()
         if "balance" in low or "insufficient" in low:
             friendly.user_message = (
-                "😔 This eSIM is temporarily unavailable (provider stock). "
-                "You were not charged. Please try another plan."
+                "This eSIM is <b>temporarily unavailable</b> (provider stock).\n"
+                "<i>✅ You were not charged — please try another plan.</i>"
             )
         raise friendly from exc
     except Exception as exc:  # noqa: BLE001
@@ -229,7 +229,7 @@ def format_esim_card(order: Order) -> str:
 
     prof = load_profile(order)
     name = prof.get("pkg") or order.service_name or "eSIM"
-    lines = [f"📶 <b>{name}</b>", f"💵 Paid: <b>{money(order.price)}</b>"]
+    lines = [f"📡 <b>{name}</b>", f"💵 Paid: <b>{money(order.price)}</b>"]
 
     if order.status == Order.WAITING or not prof.get("qr"):
         lines.append("\n⏳ <i>Preparing your eSIM… the QR code appears here automatically.</i>")
@@ -245,7 +245,8 @@ def format_esim_card(order: Order) -> str:
         lines.append(f"📅 Validity: <b>{dur} {dur_unit}{'s' if dur != 1 else ''}</b> (from first use)")
     if prof.get("iccid"):
         lines.append(f"🔢 ICCID: <code>{prof['iccid']}</code>")
-    lines.append("\n<b>📲 Install — easiest way</b>\nScan the QR code below in:")
+    lines.append("\n────────────────")
+    lines.append("<b>📲 Install — easiest way</b>\nScan the QR code below in:")
     lines.append("Settings → Mobile/Cellular → Add eSIM → Use QR Code.")
     if prof.get("smdp") and prof.get("matchingId"):
         lines.append(
@@ -255,6 +256,6 @@ def format_esim_card(order: Order) -> str:
         )
     if prof.get("shortUrl"):
         lines.append(f"\n🔗 Universal link: {prof['shortUrl']}")
-    lines.append("\n<i>Install over Wi-Fi. Keep this message — you'll need the QR to reinstall.</i>")
+    lines.append("\n💡 <i>Install over Wi-Fi. Keep this message — you'll need the QR to reinstall.</i>")
     lines.append(f"\n<i>Order #{order.id}</i>")
     return "\n".join(lines)

@@ -99,19 +99,20 @@ async def nav_main(call: CallbackQuery, state: FSMContext) -> None:
 
 
 HELP_TEXT = (
-    "ℹ️ <b>How it works</b>\n\n"
-    "1. <b>Top up</b> your wallet in the 👛 Wallet section.\n"
-    "2. Tap 📲 <b>Buy number</b>, choose a service (Telegram, WhatsApp, …) and a country.\n"
-    "3. You get a phone number. Enter it on the website/app you are registering on.\n"
-    "4. The OTP code is delivered to you here automatically.\n\n"
+    "ℹ️ <b>How it works</b>\n"
+    "────────────────\n"
+    "1. 💳 <b>Top up</b> your wallet in the Wallet section.\n"
+    "2. 📲 <b>Buy a number</b> — pick a service (Telegram, WhatsApp, …) and a country.\n"
+    "3. Enter the number on the site or app you're registering on.\n"
+    "4. 🔑 The <b>OTP code</b> is delivered here automatically.\n\n"
     "📲 <b>Activation</b>\n"
-    "• Receive codes from the chosen service for <b>20 minutes</b>.\n"
-    "• Cancellation available <b>after 2 minutes</b>.\n"
-    "• If no code is received, funds return to your balance.\n\n"
+    "• Receive codes from your service for <b>20 minutes</b>.\n"
+    "• Cancel available <b>after 2 minutes</b>.\n"
+    "• No code? Funds return to your balance.\n\n"
     "📱 <b>Rent</b>\n"
-    "• Receive codes for the whole rental period (from 24 hours).\n"
-    "• Cancellation (full refund) available <b>after 2 min and no later than 20 min</b>.\n\n"
-    "• One number = one service. You only pay an activation when the code arrives."
+    "• Receive codes for the whole rental period (from <b>24 hours</b>).\n"
+    "• Cancel with full refund <b>after 2 min, before 20 min</b>.\n\n"
+    "<i>💡 One number = one service. You only pay an activation when the code arrives.</i>"
 )
 
 
@@ -120,15 +121,17 @@ def help_text() -> str:
     site = settings.website_url.strip()
     if site:
         t += (
-            "\n\n🔒 <b>Trust & safety</b>\n"
-            "• No KYC for ordinary use — your SMS codes are deleted after delivery.\n"
-            "• Charged only when a code is delivered — no code, no charge, auto-refund.\n"
+            "\n\n"
+            "────────────────\n"
+            "🔒 <b>Trust &amp; safety</b>\n"
+            "• No KYC for ordinary use — your OTP codes are deleted after delivery.\n"
+            "• Charged only when a code arrives — no code, no charge, auto-refund.\n"
             "• Crypto wallet — no card or bank details.\n"
-            f"• Terms, Privacy & Refund policy: {site}"
+            f"• Terms, Privacy &amp; Refund policy: {site}"
         )
     if settings.support_url:
         return t + "\n\n💬 Need help? Tap <b>Contact support</b> below."
-    return t + "\n\nNeed help? Contact the bot administrator."
+    return t + "\n\n💬 Need help? Contact the bot administrator."
 
 
 def help_keyboard():
@@ -173,6 +176,6 @@ async def cmd_balance(message: Message) -> None:
     user = await repo.get_user(message.from_user.id)
     bal = user.balance if user else 0
     await message.answer(
-        f"👛 Your balance: <b>{money(bal)}</b>",
+        f"💰 Balance: <b>{money(bal)}</b>",
         reply_markup=main_menu(is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled),
     )

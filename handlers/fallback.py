@@ -17,7 +17,8 @@ router = Router(name="fallback")
 @router.message(F.text)
 async def unknown_text(message: Message) -> None:
     await message.answer(
-        "🤔 I didn't catch that. Use the menu below 👇",
+        "🤔 <b>I didn't catch that.</b>\n\n"
+        "👇 Choose an option from the menu below.",
         reply_markup=main_menu(
             is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled
         ),
