@@ -476,6 +476,34 @@ async def main():
     check("email provider-error raises", r)
     check("email provider-error hold released", u.held == Decimal("0") and u.balance == Decimal("5.00"))
 
+    print("[rent cancel refund money-back (user report)]")
+
+    class _CHero:
+        def __init__(self):
+            self.canceled = []
+
+        async def set_rent_status(self, aid, st):
+            self.canceled.append((aid, st))
+
+    await repo.get_or_create_user(501, None, None, False); await repo.credit(501, Decimal("2.00"))
+    ro = await repo.create_order(
+        user_id=501, kind="rent", activation_id="RC1", service="full", service_name="Rent",
+        country="0", country_name="Russia", phone="79990000000",
+        cost=Decimal("0.05"), price=Decimal("0.06"), status=Order.WAITING,
+        expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1),
+    )
+    bal0 = (await repo.get_user(501)).balance  # 2.00 (already-paid state)
+    ch = _CHero()
+    ok = await rsvc.cancel_rent_refund(ro, ch)
+    u = await repo.get_user(501); ro = await repo.get_order(ro.id)
+    check("rent cancel refunds the price", ok and u.balance == bal0 + Decimal("0.06"))
+    check("rent cancel status CANCELED", ro.status == "canceled")
+    check("rent cancel hit provider setRentStatus=2", ch.canceled == [("RC1", 2)])
+    # exactly-once: a second cancel must NOT double-refund
+    ok2 = await rsvc.cancel_rent_refund(await repo.get_order(ro.id), _CHero())
+    check("rent cancel no double refund",
+          ok2 is False and (await repo.get_user(501)).balance == bal0 + Decimal("0.06"))
+
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     # cleanup
     from db import engine
