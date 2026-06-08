@@ -472,33 +472,36 @@ async def reactivate_number(order: Order, hero: HeroSMSClient, catalog: Catalog)
 
     # 1) Atomic claim: terminal -> WAITING (fresh future expiry so the poller's
     #    expiry branch can't fire during the reactivate POST; old number kept).
+    # 1) Atomic claim -> REACTIVATING (a TRANSIENT status the order poller ignores,
+    #    so it can't deliver the stale old code on the kept old activation_id).
     if not await repo.reactivate_begin(order.id, fresh_exp, (Order.COMPLETED, Order.EXPIRED)):
         return REACT_ERROR  # lost the race / no longer eligible
     # 2) HOLD before the billable call.
     if not await repo.try_hold(order.user_id, price):
-        await repo.close_order(order.id, prior, (Order.WAITING,))  # roll status back
+        await repo.close_order(order.id, prior, (Order.REACTIVATING,))  # roll status back
         return REACT_INSUFFICIENT
     # 3) Billable provider call.
     try:
         act = await hero.reactivate(order.activation_id)
     except Exception as exc:  # noqa: BLE001 — HeroSMSError + network
         await repo.release_hold(order.user_id, price)
-        await repo.close_order(order.id, prior, (Order.WAITING,))
+        await repo.close_order(order.id, prior, (Order.REACTIVATING,))
         log.warning("reactivate %s failed: %s", order.activation_id, exc)
         return REACT_ERROR
     real_cost = act.cost if act.cost > 0 else (cost_hint or order.cost or Decimal("0"))
     if real_cost > price:
         log.error("REACTIVATE MARGIN BREACH order %s: real_cost=%s > price=%s",
                   order.id, real_cost, price)
-    # 4) Atomic commit of the new number (guards the poller-cancel race).
+    # 4) Atomic commit REACTIVATING -> WAITING with the new number. The poller can't
+    #    touch a REACTIVATING row, so this only fails defensively (order vanished).
     if not await repo.reactivate_commit(order.id, act.id, act.phone or order.phone, real_cost, price):
-        # The poller closed the WAITING row mid-flight — free the new number + hold.
         try:
-            await hero.cancel(act.id)
+            await hero.cancel(act.id)  # free the freshly-grabbed number
         except HeroSMSError:
             pass
-        await repo.release_hold(order.user_id, price)
-        log.warning("reactivate commit lost race for order %s — rolled back", order.id)
+        await repo.release_hold(order.user_id, price)  # safe: poller never touched REACTIVATING
+        await repo.close_order(order.id, prior, (Order.REACTIVATING,))  # restore terminal
+        log.warning("reactivate commit failed for order %s — rolled back", order.id)
         return REACT_ERROR
     catalog.invalidate_prices(order.service)
     log.info("Order %s REACTIVATED: new act=%s phone=%s price=%s held",
@@ -514,24 +517,27 @@ async def request_another_code(order: Order, hero: HeroSMSClient) -> str:
     caller that flips the status holds the price and calls HeroSMS. On hero
     failure (or a lost transition) the hold is released and the status rolled back.
     """
-    # Atomic gate: only the caller that actually flips RECEIVED→WAITING proceeds.
-    if not await repo.close_order(order.id, Order.WAITING, (Order.RECEIVED,)):
+    # Atomic gate: win RECEIVED→REQUESTING (a TRANSIENT status the order poller
+    # ignores). This is what prevents the poller from re-delivering the stale
+    # already-received code and DOUBLE-CHARGING during the setStatus=3 window.
+    if not await repo.close_order(order.id, Order.REQUESTING, (Order.RECEIVED,)):
         return ANOTHER_ERROR
     if not await repo.try_hold(order.user_id, order.price):
-        await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,))  # roll back
+        await repo.close_order(order.id, Order.RECEIVED, (Order.REQUESTING,))  # roll back
         return ANOTHER_INSUFFICIENT
     try:
+        # Reset the provider (it now waits for a NEW SMS) BEFORE the order is
+        # poller-visible again, so the poller can't grab the old STATUS_OK code.
         await hero.request_another_code(order.activation_id)
     except HeroSMSError as exc:
         await repo.release_hold(order.user_id, order.price)
-        await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,))  # roll back
+        await repo.close_order(order.id, Order.RECEIVED, (Order.REQUESTING,))  # roll back
         log.warning("request_another_code %s failed: %s", order.activation_id, exc.code)
         return ANOTHER_ERROR
-    # Give the reopened order a fresh code window (else the poller would EXPIRE it
-    # immediately on the stale expires_at). KEEP the accumulated codes so the card
-    # still shows the previously received ones; the new code is appended on arrival.
-    await repo.update_order(
-        order.id,
-        expires_at=_now() + dt.timedelta(minutes=settings.order_timeout_min),
+    # Only NOW expose it to the poller — WAITING + a fresh code window, in one
+    # atomic update. KEEP the accumulated codes; the new code is appended on arrival.
+    await repo.reopen_waiting(
+        order.id, (Order.REQUESTING,),
+        _now() + dt.timedelta(minutes=settings.order_timeout_min),
     )
     return ANOTHER_OK

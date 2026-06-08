@@ -230,22 +230,25 @@ async def complete_email(order: Order, client: HeroSMSV1Client) -> None:
 async def reorder_email(order: Order, client: HeroSMSV1Client) -> str:
     """Request another email/code on the same activation (a fresh hold + charge).
 
-    Mirrors orders.request_another_code: win RECEIVED→WAITING first (exactly-once
-    gate), hold, call the provider; release + roll back on failure."""
-    if not await repo.close_order(order.id, Order.WAITING, (Order.RECEIVED,)):
+    Mirrors orders.request_another_code: win RECEIVED→REQUESTING (a TRANSIENT
+    status the email poller ignores) so the poller can't re-deliver the stale
+    already-received OTP and double-charge during the email_reorder call. Reset the
+    provider first, THEN expose it as WAITING. Release + roll back on failure."""
+    if not await repo.close_order(order.id, Order.REQUESTING, (Order.RECEIVED,)):
         return ANOTHER_ERROR
     if not await repo.try_hold(order.user_id, order.price):
-        await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,))
+        await repo.close_order(order.id, Order.RECEIVED, (Order.REQUESTING,))
         return ANOTHER_INSUFFICIENT
     try:
         await client.email_reorder(order.activation_id)
     except Exception as exc:  # noqa: BLE001
         await repo.release_hold(order.user_id, order.price)
-        await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,))
+        await repo.close_order(order.id, Order.RECEIVED, (Order.REQUESTING,))
         log.warning("email reorder %s failed: %s", order.activation_id, exc)
         return ANOTHER_ERROR
-    await repo.update_order(
-        order.id, expires_at=_now() + dt.timedelta(minutes=settings.email_timeout_min)
+    await repo.reopen_waiting(
+        order.id, (Order.REQUESTING,),
+        _now() + dt.timedelta(minutes=settings.email_timeout_min),
     )
     return ANOTHER_OK
 

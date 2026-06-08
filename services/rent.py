@@ -74,7 +74,18 @@ async def rent_purchase(
         raise PurchaseError() from exc
 
     # Rental is purchased -> finalize the charge now (paid for the period).
-    await repo.charge_hold(user_id, price)
+    # MUST check the result: charge_hold is a conditional UPDATE that no-ops if the
+    # balance/held moved underneath us (concurrent buy/admin edit). If it doesn't
+    # fire we'd hand out a free rental AND strand the hold forever ('money not
+    # back') — so release the hold, give the number back, and abort.
+    if not await repo.charge_hold(user_id, price):
+        await repo.release_hold(user_id, price)
+        try:
+            await hero.set_rent_status(rent.id, 2)  # cancel — give the number back
+        except Exception:  # noqa: BLE001
+            pass
+        log.critical("rent charge_hold FAILED user=%s price=%s — released + cancelled", user_id, price)
+        raise PurchaseError()
     real_cost = rent.cost if rent.cost > 0 else cost_hint
 
     order = await repo.create_order(

@@ -193,7 +193,15 @@ async def esim_purchase(
         raise PurchaseError()
 
     # Order placed successfully -> finalise the charge (paid upfront).
-    await repo.charge_hold(user_id, price)
+    # Check the result: charge_hold no-ops if balance/held moved underneath us
+    # (concurrent buy/admin edit). On failure release the hold (so it isn't
+    # stranded, permanently shrinking the customer's available balance) and abort.
+    if not await repo.charge_hold(user_id, price):
+        await repo.release_hold(user_id, price)
+        log.critical(
+            "eSIM charge_hold FAILED user=%s price=%s orderNo=%s — released hold, "
+            "RECONCILE the orphaned order at the provider", user_id, price, order_no)
+        raise PurchaseError()
 
     region = pkg.region_names[0] if pkg.region_names else pkg.location
     import datetime as dt

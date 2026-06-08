@@ -215,15 +215,16 @@ async def reactivate_begin(
     order_id: int, expires_at: dt.datetime,
     from_statuses: tuple[str, ...] = (Order.COMPLETED, Order.EXPIRED),
 ) -> bool:
-    """Atomically claim a terminal order for reuse: flip it back to WAITING with a
-    FRESH future expires_at and clear the code (KEEP the old activation_id until the
-    provider call commits a new one). The exactly-once gate for 'Reuse number' — a
-    double-tap or stale card can't reserve a second hold. Returns rowcount==1."""
+    """Atomically claim a terminal order for reuse: flip it to the transient
+    REACTIVATING status (EXCLUDED from the order poller, so it can't deliver the
+    OLD code mid-reactivate), set a fresh expiry and clear the code (the old
+    activation_id is kept until reactivate_commit swaps in the new one). The
+    exactly-once gate for 'Reuse number'. Returns rowcount==1."""
     async with session_factory() as s:
         result = await s.execute(
             update(Order)
             .where(Order.id == order_id, Order.status.in_(from_statuses))
-            .values(status=Order.WAITING, expires_at=expires_at, code=None, updated_at=_now())
+            .values(status=Order.REACTIVATING, expires_at=expires_at, code=None, updated_at=_now())
         )
         await s.commit()
         return result.rowcount == 1
@@ -232,18 +233,44 @@ async def reactivate_begin(
 async def reactivate_commit(
     order_id: int, activation_id: str, phone: str, cost: Decimal, price: Decimal
 ) -> bool:
-    """Write the reactivated number onto the (already WAITING) order. Guarded by
-    WHERE status='waiting' so it fails if the order_poller raced and closed the row
-    during the provider call — letting reactivate_number clean up. Returns rowcount==1."""
+    """Atomically flip REACTIVATING -> WAITING and write the new number. Only now
+    does the order become poller-visible (with the NEW activation_id), so the
+    poller can never deliver the stale old code. Returns rowcount==1."""
     async with session_factory() as s:
         result = await s.execute(
             update(Order)
-            .where(Order.id == order_id, Order.status == Order.WAITING)
-            .values(activation_id=activation_id, phone=phone, cost=cost, price=price,
-                    hero_released=True, updated_at=_now())
+            .where(Order.id == order_id, Order.status == Order.REACTIVATING)
+            .values(status=Order.WAITING, activation_id=activation_id, phone=phone,
+                    cost=cost, price=price, hero_released=True, updated_at=_now())
         )
         await s.commit()
         return result.rowcount == 1
+
+
+async def reopen_waiting(
+    order_id: int, from_statuses: tuple[str, ...], expires_at: dt.datetime
+) -> bool:
+    """Atomically flip a transient status (REQUESTING) -> WAITING with a fresh
+    expiry, in ONE update so the poller never sees a stale expiry. Used after a
+    provider reset (another code / another email). Returns rowcount==1."""
+    async with session_factory() as s:
+        result = await s.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status.in_(from_statuses))
+            .values(status=Order.WAITING, expires_at=expires_at, updated_at=_now())
+        )
+        await s.commit()
+        return result.rowcount == 1
+
+
+async def get_stuck_transient_orders() -> list[Order]:
+    """Orders stuck in a transient provider-call status (REQUESTING/REACTIVATING)
+    — the order poller self-heals any left behind by a crash mid-flight."""
+    async with session_factory() as s:
+        result = await s.execute(
+            select(Order).where(Order.status.in_([Order.REQUESTING, Order.REACTIVATING]))
+        )
+        return list(result.scalars().all())
 
 
 async def set_hero_released(order_id: int, released: bool) -> None:

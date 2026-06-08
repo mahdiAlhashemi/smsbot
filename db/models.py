@@ -70,6 +70,10 @@ class Order(Base):
     CANCELED = "canceled"    # cancelled, hold released
     EXPIRED = "expired"      # timed out, hold released
     PROLONGING = "prolonging"  # transient: a rental is being extended (charge in-flight)
+    # Transient states during a provider-reset call — EXCLUDED from the pollers so
+    # they can't deliver/charge the stale (already-received) code mid-flight.
+    REQUESTING = "requesting"      # 'another code' / 'another email' reset in-flight
+    REACTIVATING = "reactivating"  # reactivate (reuse number) provider call in-flight
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)

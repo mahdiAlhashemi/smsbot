@@ -49,6 +49,18 @@ async def order_poller(bot: Bot, hero: HeroSMSClient) -> None:
 
 
 async def _poll_orders_once(bot: Bot, hero: HeroSMSClient) -> None:
+    # Self-heal: an order stuck in a transient provider-call status (a crash mid
+    # 'another code' / 'reuse number') is excluded from get_open_orders, so it would
+    # otherwise sit forever with a held-but-uncharged reservation. After 120s (well
+    # past a single HTTP round-trip) roll it back and release the hold.
+    for order in await repo.get_stuck_transient_orders():
+        if _now() - _aware(order.updated_at) > dt.timedelta(seconds=120):
+            target = Order.RECEIVED if order.status == Order.REQUESTING else Order.EXPIRED
+            if await repo.close_order(order.id, target, (order.status,)):
+                await repo.release_hold(order.user_id, order.price)
+                log.warning("order %s stuck in %s — rolled back to %s + released hold",
+                            order.id, order.status, target)
+
     for order in await repo.get_open_orders():
         try:
             await _handle_order(bot, hero, order)

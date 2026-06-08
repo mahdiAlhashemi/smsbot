@@ -504,6 +504,114 @@ async def main():
     check("rent cancel no double refund",
           ok2 is False and (await repo.get_user(501)).balance == bal0 + Decimal("0.06"))
 
+    print("[money-bug fixes from audit]")
+    from herosms import RentActivation as _RA
+    _now2 = lambda: dt.datetime.now(dt.timezone.utc)
+    _exp = _now2() + dt.timedelta(minutes=20)
+
+    # FIX #1: rent_purchase aborts + releases hold + cancels if charge_hold no-ops
+    _pr = await _pricing.commission_price(Decimal("0.05"))
+
+    class _DrainHero:
+        def __init__(self):
+            self.canceled = []
+
+        async def rent_number(self, service, country, duration):
+            await repo.try_debit(601, _pr)  # simulate concurrent balance drain
+            return _RA(id="RD1", phone="79990000000", end_date="", cost=Decimal("0.05"))
+
+        async def set_rent_status(self, aid, st):
+            self.canceled.append((aid, st))
+
+    class _Cat2:
+        async def service_name(self, s):
+            return "X"
+
+        async def country_name(self, c):
+            return "Y"
+
+        def invalidate_prices(self, s=None):
+            pass
+
+    await repo.get_or_create_user(601, None, None, False); await repo.credit(601, _pr)
+    dh = _DrainHero()
+    r = False
+    try:
+        await rsvc.rent_purchase(601, "full", "0", 24, Decimal("0.05"), dh, _Cat2())
+    except osvc.PurchaseError:
+        r = True
+    u = await repo.get_user(601)
+    check("rent charge-fail raises", r)
+    check("rent charge-fail releases hold (no stranded funds)", u.held == Decimal("0"))
+    check("rent charge-fail cancels the number", dh.canceled == [("RD1", 2)])
+
+    # FIX #2: request_another_code goes via REQUESTING transient, resets provider
+    class _AHero:
+        def __init__(self):
+            self.reset = []
+
+        async def request_another_code(self, aid):
+            self.reset.append(aid)
+
+    await repo.get_or_create_user(602, None, None, False); await repo.credit(602, Decimal("1.00"))
+    ao = await repo.create_order(
+        user_id=602, kind="sms", activation_id="AN1", service="zz", service_name="ZZ",
+        country="99", country_name="N", phone="7999", cost=Decimal("0.05"), price=Decimal("0.06"),
+        status=Order.RECEIVED, code='[{"type":"sms","code":"111","text":"111","at":""}]', expires_at=_exp,
+    )
+    ah = _AHero()
+    res = await osvc.request_another_code(ao, ah)
+    ao = await repo.get_order(ao.id); u = await repo.get_user(602)
+    check("another_code OK -> WAITING", res == osvc.ANOTHER_OK and ao.status == "waiting")
+    check("another_code placed hold", u.held == Decimal("0.06"))
+    check("another_code reset provider", ah.reset == ["AN1"])
+    check("another_code kept prior codes", osvc.latest_code(ao) == "111")
+    check("another_code fresh future expiry",
+          ao.expires_at.replace(tzinfo=dt.timezone.utc) > _now2())
+
+    await repo.get_or_create_user(603, None, None, False)  # balance 0
+    ao2 = await repo.create_order(
+        user_id=603, kind="sms", activation_id="AN2", service="zz", service_name="ZZ",
+        country="99", country_name="N", phone="7999", cost=Decimal("0.05"), price=Decimal("0.06"),
+        status=Order.RECEIVED, code=None, expires_at=_exp,
+    )
+    res2 = await osvc.request_another_code(ao2, _AHero())
+    ao2 = await repo.get_order(ao2.id)
+    check("another_code insufficient rolls back to RECEIVED",
+          res2 == osvc.ANOTHER_INSUFFICIENT and ao2.status == "received"
+          and (await repo.get_user(603)).held == Decimal("0"))
+
+    # FIX #4: reorder_email goes via REQUESTING transient
+    class _MR:
+        def __init__(self):
+            self.reordered = []
+
+        async def email_reorder(self, eid):
+            self.reordered.append(eid)
+
+    await repo.get_or_create_user(604, None, None, False); await repo.credit(604, Decimal("1.00"))
+    meo = await repo.create_order(
+        user_id=604, kind="email", activation_id="ME1", service="instagram.com",
+        service_name="Instagram", country="gmx.com", country_name="gmx.com",
+        phone="a@gmx.com", cost=Decimal("0.045"), price=Decimal("0.06"),
+        status=Order.RECEIVED, code=None, expires_at=_exp,
+    )
+    mr = _MR()
+    rres = await esvc.reorder_email(meo, mr)
+    meo = await repo.get_order(meo.id)
+    check("reorder_email OK -> WAITING", rres == osvc.ANOTHER_OK and meo.status == "waiting")
+    check("reorder_email placed hold + reset provider",
+          (await repo.get_user(604)).held == Decimal("0.06") and mr.reordered == ["ME1"])
+
+    # FIX: stuck-transient self-heal query finds REQUESTING/REACTIVATING orders
+    su = await repo.create_order(
+        user_id=602, kind="sms", activation_id="ST1", service="zz", service_name="ZZ",
+        country="99", country_name="N", phone="7", cost=Decimal("0.05"), price=Decimal("0.06"),
+        status=Order.REACTIVATING, expires_at=_exp,
+    )
+    stuck = await repo.get_stuck_transient_orders()
+    check("self-heal query finds stuck transient", any(o.id == su.id for o in stuck))
+
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     # cleanup
     from db import engine
