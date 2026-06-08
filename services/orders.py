@@ -438,10 +438,72 @@ async def complete_order(order: Order, hero: HeroSMSClient) -> None:
         log.warning("finish %s failed: %s", order.activation_id, exc.code)
 
 
-# Result codes for request_another_code.
+# Result codes for request_another_code / reactivate_number.
 ANOTHER_OK = "OK"
 ANOTHER_INSUFFICIENT = "INSUFFICIENT"
 ANOTHER_ERROR = "ERROR"
+REACT_OK = "OK"
+REACT_INSUFFICIENT = "INSUFFICIENT"
+REACT_ERROR = "ERROR"
+
+
+async def reactivate_number(order: Order, hero: HeroSMSClient, catalog: Catalog) -> str:
+    """Re-request a finished number (reactivate) so it can receive a fresh code.
+
+    BILLABLE — goes through the charge-on-receive flow exactly like a fresh buy:
+    win the terminal→WAITING gate (fresh expiry, code cleared, old number kept),
+    HOLD the commission price BEFORE the provider call, POST reactivate, then commit
+    the new activation onto the same row. The order_poller then delivers + charges
+    the new code exactly once. Releases the hold + cancels the new number on any
+    failure. Reuses the same Order row (carries chat_id/message_id, so the live
+    card flips to WAITING in place). Returns REACT_OK | REACT_INSUFFICIENT | REACT_ERROR.
+    """
+    # Eligibility (defensive — the keyboard already gates this).
+    if order.kind != "sms" or not order.activation_id or order.status not in (
+        Order.COMPLETED, Order.EXPIRED
+    ):
+        return REACT_ERROR
+    prior = order.status
+    cost_hint = order.cost if order.cost and order.cost > 0 else None
+    price = await pricing.commission_price(cost_hint or order.cost or Decimal("0"))
+    if price <= 0:
+        price = order.price or Decimal("0")
+    fresh_exp = _now() + dt.timedelta(minutes=settings.order_timeout_min)
+
+    # 1) Atomic claim: terminal -> WAITING (fresh future expiry so the poller's
+    #    expiry branch can't fire during the reactivate POST; old number kept).
+    if not await repo.reactivate_begin(order.id, fresh_exp, (Order.COMPLETED, Order.EXPIRED)):
+        return REACT_ERROR  # lost the race / no longer eligible
+    # 2) HOLD before the billable call.
+    if not await repo.try_hold(order.user_id, price):
+        await repo.close_order(order.id, prior, (Order.WAITING,))  # roll status back
+        return REACT_INSUFFICIENT
+    # 3) Billable provider call.
+    try:
+        act = await hero.reactivate(order.activation_id)
+    except Exception as exc:  # noqa: BLE001 — HeroSMSError + network
+        await repo.release_hold(order.user_id, price)
+        await repo.close_order(order.id, prior, (Order.WAITING,))
+        log.warning("reactivate %s failed: %s", order.activation_id, exc)
+        return REACT_ERROR
+    real_cost = act.cost if act.cost > 0 else (cost_hint or order.cost or Decimal("0"))
+    if real_cost > price:
+        log.error("REACTIVATE MARGIN BREACH order %s: real_cost=%s > price=%s",
+                  order.id, real_cost, price)
+    # 4) Atomic commit of the new number (guards the poller-cancel race).
+    if not await repo.reactivate_commit(order.id, act.id, act.phone or order.phone, real_cost, price):
+        # The poller closed the WAITING row mid-flight — free the new number + hold.
+        try:
+            await hero.cancel(act.id)
+        except HeroSMSError:
+            pass
+        await repo.release_hold(order.user_id, price)
+        log.warning("reactivate commit lost race for order %s — rolled back", order.id)
+        return REACT_ERROR
+    catalog.invalidate_prices(order.service)
+    log.info("Order %s REACTIVATED: new act=%s phone=%s price=%s held",
+             order.id, act.id, act.phone, price)
+    return REACT_OK
 
 
 async def request_another_code(order: Order, hero: HeroSMSClient) -> str:

@@ -173,6 +173,11 @@ def order_keyboard(order: Order) -> InlineKeyboardMarkup:
         )
         b.button(text="✅ Done", callback_data=OrderAct(action="done", id=order.id))
         b.adjust(2)
+    elif order.status in (Order.COMPLETED, Order.EXPIRED) and order.kind == "sms" and order.activation_id:
+        # Terminal single-code order that still has a real number -> offer to reuse
+        # it for a fresh code (billable, re-held; the WAITING card takes over).
+        b.button(text="♻️ Reuse number", callback_data=OrderAct(action="reactivate", id=order.id))
+        b.adjust(1)
     b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
     return b.as_markup()
 

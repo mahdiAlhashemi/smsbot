@@ -211,6 +211,41 @@ async def get_pending_orders() -> list[Order]:
         return list(result.scalars().all())
 
 
+async def reactivate_begin(
+    order_id: int, expires_at: dt.datetime,
+    from_statuses: tuple[str, ...] = (Order.COMPLETED, Order.EXPIRED),
+) -> bool:
+    """Atomically claim a terminal order for reuse: flip it back to WAITING with a
+    FRESH future expires_at and clear the code (KEEP the old activation_id until the
+    provider call commits a new one). The exactly-once gate for 'Reuse number' — a
+    double-tap or stale card can't reserve a second hold. Returns rowcount==1."""
+    async with session_factory() as s:
+        result = await s.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status.in_(from_statuses))
+            .values(status=Order.WAITING, expires_at=expires_at, code=None, updated_at=_now())
+        )
+        await s.commit()
+        return result.rowcount == 1
+
+
+async def reactivate_commit(
+    order_id: int, activation_id: str, phone: str, cost: Decimal, price: Decimal
+) -> bool:
+    """Write the reactivated number onto the (already WAITING) order. Guarded by
+    WHERE status='waiting' so it fails if the order_poller raced and closed the row
+    during the provider call — letting reactivate_number clean up. Returns rowcount==1."""
+    async with session_factory() as s:
+        result = await s.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status == Order.WAITING)
+            .values(activation_id=activation_id, phone=phone, cost=cost, price=price,
+                    hero_released=True, updated_at=_now())
+        )
+        await s.commit()
+        return result.rowcount == 1
+
+
 async def set_hero_released(order_id: int, released: bool) -> None:
     async with session_factory() as s:
         await s.execute(

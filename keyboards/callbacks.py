@@ -34,7 +34,7 @@ class BuyConfirm(CallbackData, prefix="buy"):
 
 
 class OrderAct(CallbackData, prefix="ord"):
-    action: str  # cancel | done | another | refresh
+    action: str  # cancel | done | another | refresh | reactivate
     id: int
 
 

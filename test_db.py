@@ -328,6 +328,79 @@ async def main():
     smap = await repo.get_all_stats()
     check("stats recorded", smap.get(("tg", "0")) == (2, 1))
 
+    print("[reactivate / reuse number (Feature B)]")
+    from herosms import Activation as _Act
+
+    class _RHero:
+        def __init__(self, fail=False):
+            self.fail = fail
+            self.canceled = []
+
+        async def reactivate(self, activation_id, duration=None):
+            if self.fail:
+                from herosms import HeroSMSError
+                raise HeroSMSError("NO_BALANCE")
+            return _Act(id="NEW999", phone="79991112233", cost=Decimal("0.42"),
+                        country="0", can_get_another=True)
+
+        async def cancel(self, activation_id):
+            self.canceled.append(activation_id)
+
+    class _Cat:
+        def invalidate_prices(self, service=None):
+            pass
+
+    async def _mk_done(uid, bal, status=Order.COMPLETED, aid="OLD1", kind="sms"):
+        await repo.get_or_create_user(uid, None, None, False)
+        await repo.credit(uid, bal)
+        o = await repo.create_order(
+            user_id=uid, kind=kind, activation_id=aid, service="zz", service_name="ZZ",
+            country="99", country_name="Nowhere", phone="79990000000",
+            cost=Decimal("0.30"), price=Decimal("0.45"), status=status, code="111222",
+            expires_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1),
+        )
+        return o
+
+    _rp = await _pricing.commission_price(Decimal("0.30"))
+
+    # (a) happy: terminal -> WAITING, HELD (balance unchanged), number swapped, code cleared
+    o = await _mk_done(301, Decimal("5.00"))
+    res = await osvc.reactivate_number(o, _RHero(), _Cat())
+    u = await repo.get_user(301); o = await repo.get_order(o.id)
+    check("reactivate REACT_OK", res == osvc.REACT_OK)
+    check("reactivate -> WAITING", o.status == "waiting")
+    check("reactivate held not charged", u.held == _rp and u.balance == Decimal("5.00"))
+    check("reactivate swapped number", o.activation_id == "NEW999" and o.phone == "79991112233")
+    check("reactivate cleared code", o.code is None)
+    check("reactivate fresh future expiry",
+          o.expires_at.replace(tzinfo=dt.timezone.utc) > dt.datetime.now(dt.timezone.utc))
+    # a delivered code now charges exactly once against the reactivate hold
+    bal0 = u.balance
+    await osvc.deliver_code(o, "777888")
+    u = await repo.get_user(301)
+    check("reactivate code charges once", u.balance == bal0 - _rp and u.held == Decimal("0"))
+
+    # (b) provider error: rolled back to terminal, hold released
+    o = await _mk_done(302, Decimal("5.00"), status=Order.EXPIRED)
+    res = await osvc.reactivate_number(o, _RHero(fail=True), _Cat())
+    u = await repo.get_user(302); o = await repo.get_order(o.id)
+    check("reactivate provider-error REACT_ERROR", res == osvc.REACT_ERROR)
+    check("reactivate provider-error rolled back", o.status == "expired")
+    check("reactivate provider-error hold released", u.held == Decimal("0") and u.balance == Decimal("5.00"))
+
+    # (c) insufficient funds: REACT_INSUFFICIENT, stays terminal
+    o = await _mk_done(303, Decimal("0.01"))
+    res = await osvc.reactivate_number(o, _RHero(), _Cat())
+    u = await repo.get_user(303); o = await repo.get_order(o.id)
+    check("reactivate insufficient", res == osvc.REACT_INSUFFICIENT)
+    check("reactivate insufficient stays terminal", o.status == "completed")
+    check("reactivate insufficient no hold", u.held == Decimal("0"))
+
+    # (d) ineligible (rent / no activation_id) -> REACT_ERROR, untouched
+    o = await _mk_done(304, Decimal("5.00"), kind="rent")
+    res = await osvc.reactivate_number(o, _RHero(), _Cat())
+    check("reactivate rejects non-sms", res == osvc.REACT_ERROR)
+
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     # cleanup
     from db import engine

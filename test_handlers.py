@@ -89,6 +89,19 @@ def main():
     check("rent card shows Extend button",
           any("Extend" in (btn.text or "")
               for row in kbs["rent_card_active"].inline_keyboard for btn in row))
+
+    # Feature B: "Reuse number" only on terminal sms orders that still have a number
+    def _has_reuse(o):
+        kb = menus.order_keyboard(o)
+        return any("Reuse" in (btn.text or "") for row in kb.inline_keyboard for btn in row)
+    check("reuse on completed sms w/ number",
+          _has_reuse(Order(id=20, status=Order.COMPLETED, kind="sms", activation_id="A1")))
+    check("no reuse on expired w/o number",
+          not _has_reuse(Order(id=21, status=Order.EXPIRED, kind="sms", activation_id="")))
+    check("no reuse on rent order",
+          not _has_reuse(Order(id=22, status=Order.COMPLETED, kind="rent", activation_id="A1")))
+    check("OrderAct reactivate short",
+          len(cb.OrderAct(action="reactivate", id=999999).pack().encode()) <= 64)
     for name, kb in kbs.items():
         ok = kb is not None and hasattr(kb, "inline_keyboard")
         # validate every button has exactly one action set

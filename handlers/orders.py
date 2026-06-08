@@ -169,6 +169,27 @@ async def another_code_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
         await call.answer("⚠️ Could not request another code.", show_alert=True)
 
 
+@router.callback_query(OrderAct.filter(F.action == "reactivate"))
+async def reactivate_order_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
+    order = await _owned(call, callback_data.id)
+    if order is None:
+        return
+    if order.status not in (Order.COMPLETED, Order.EXPIRED) or order.kind != "sms" or not order.activation_id:
+        await call.answer("ℹ️ This number can't be reused.", show_alert=True)
+        return
+    ctx = get_ctx()
+    await call.answer("♻️ Reactivating…")
+    result = await order_svc.reactivate_number(order, ctx.hero, ctx.catalog)
+    if result == order_svc.REACT_OK:
+        order = await repo.get_order(order.id)
+        await _rerender(call, order)
+        await call.answer(f"♻️ Number reactivated — {money(order.price)} held. Waiting for a new code.")
+    elif result == order_svc.REACT_INSUFFICIENT:
+        await call.answer("💳 Not enough balance to reuse this number. Top up first.", show_alert=True)
+    else:
+        await call.answer("⚠️ Couldn't reuse this number — please try again.", show_alert=True)
+
+
 @router.callback_query(OrderAct.filter(F.action == "done"))
 async def done_cb(call: CallbackQuery, callback_data: OrderAct) -> None:
     order = await _owned(call, callback_data.id)
