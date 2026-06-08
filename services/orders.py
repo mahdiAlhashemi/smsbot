@@ -47,6 +47,13 @@ class DuplicateOrder(PurchaseError):
     )
 
 
+class ProlongError(PurchaseError):
+    user_message = (
+        "Couldn't extend this rental — it may have just ended or is already being "
+        "extended. Please refresh and try again."
+    )
+
+
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 

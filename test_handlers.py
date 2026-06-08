@@ -52,6 +52,9 @@ def main():
     check("OrderAct roundtrip", cb.OrderAct.unpack(cb.OrderAct(action="cancel", id=5).pack()).id == 5)
     check("Nav roundtrip", cb.Nav.unpack(cb.Nav(to="wallet").pack()).to == "wallet")
     check("TopupPick", cb.TopupPick.unpack(cb.TopupPick(amount="10").pack()).amount == "10")
+    check("RentExt roundtrip", cb.RentExt.unpack(cb.RentExt(id=7, h=24).pack()).h == 24)
+    check("RentExtGo roundtrip", cb.RentExtGo.unpack(cb.RentExtGo(id=7, h=168).pack()).h == 168)
+    check("RentExt short", len(cb.RentExt(id=999999, h=4320).pack().encode()) <= 64)
 
     print("[keyboards build]")
     services = [{"code": "tg", "name": "Telegram"}, {"code": "wa", "name": "WhatsApp"}] * 10
@@ -75,7 +78,17 @@ def main():
         "order_waiting": menus.order_keyboard(Order(id=1, status=Order.WAITING)),
         "order_received": menus.order_keyboard(Order(id=2, status=Order.RECEIVED)),
         "order_done": menus.order_keyboard(Order(id=3, status=Order.COMPLETED)),
+        "rent_extend_menu": menus.rent_extend_keyboard(9, [(24, Decimal("0.60")), (168, Decimal("1.20"))]),
+        "rent_extend_confirm": menus.rent_extend_confirm_keyboard(9, 24),
     }
+    import datetime as _dt
+    _active_rent = Order(id=9, kind="rent", status=Order.WAITING,
+                         created_at=_dt.datetime.now(_dt.timezone.utc),
+                         expires_at=_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=1))
+    kbs["rent_card_active"] = menus.rent_order_keyboard(_active_rent)
+    check("rent card shows Extend button",
+          any("Extend" in (btn.text or "")
+              for row in kbs["rent_card_active"].inline_keyboard for btn in row))
     for name, kb in kbs.items():
         ok = kb is not None and hasattr(kb, "inline_keyboard")
         # validate every button has exactly one action set

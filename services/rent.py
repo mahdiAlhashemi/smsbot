@@ -97,6 +97,84 @@ async def rent_purchase(
     return order
 
 
+def _dec(v) -> Decimal:
+    try:
+        return Decimal(str(v))
+    except Exception:  # noqa: BLE001
+        return Decimal("0")
+
+
+def parse_prolong_options(raw: dict) -> dict[int, Decimal]:
+    """Flatten a hero.prolong_options() response into {hours: wholesale_cost}.
+
+    Tolerates the {data:{options:[...]}} envelope, a bare {options:[...]}, or a
+    dict-of-options; reads hours from 'hours'/'duration' and cost defensively from
+    'price'/'cost'/'retail_price'. Rows with non-positive hours/cost are dropped.
+    """
+    options = []
+    if isinstance(raw, dict):
+        data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+        options = (data or {}).get("options") or raw.get("options") or []
+    if isinstance(options, dict):
+        options = list(options.values())
+    out: dict[int, Decimal] = {}
+    for opt in options or []:
+        if not isinstance(opt, dict):
+            continue
+        try:
+            hours = int(opt.get("hours") or opt.get("duration") or 0)
+        except (TypeError, ValueError):
+            continue
+        cost = _dec(opt.get("price") or opt.get("cost") or opt.get("retail_price") or 0)
+        if hours > 0 and cost > 0:
+            out[hours] = cost
+    return out
+
+
+async def prolong_rent(order: Order, duration: int, cost: Decimal, hero: HeroSMSClient) -> bool:
+    """Extend an active rental's session, charged UPFRONT (rent-style).
+
+    Money-safe sequence (mirrors rent_purchase + the activation hold pattern):
+      1) win the WAITING/RECEIVED -> PROLONGING transition atomically (this is the
+         exactly-once gate — it blocks a double-tap AND a racing cancel/finish/expire),
+      2) try_hold the commission price,
+      3) call hero.prolong,
+      4) charge_hold,
+      5) push out expires_at and restore the prior status in one write.
+    Any failure releases the hold and restores the ORIGINAL status + expiry (the
+    expiry is never written on an error path, so it can't be lost).
+    """
+    from services.orders import ProlongError
+
+    price = await pricing.commission_price(cost)
+    prev = order.status
+    if not await repo.close_order(order.id, Order.PROLONGING, (Order.WAITING, Order.RECEIVED)):
+        raise ProlongError()
+    if not await repo.try_hold(order.user_id, price):
+        await repo.update_order(order.id, status=prev)  # restore (expiry untouched)
+        raise InsufficientFunds()
+    try:
+        await hero.prolong(order.activation_id, duration)
+    except Exception as exc:  # noqa: BLE001
+        await repo.release_hold(order.user_id, price)
+        await repo.update_order(order.id, status=prev)  # ORIGINAL expiry preserved
+        log.warning("prolong %s failed: %s", order.activation_id, exc)
+        raise PurchaseError() from exc
+    if not await repo.charge_hold(order.user_id, price):
+        await repo.release_hold(order.user_id, price)
+        await repo.update_order(order.id, status=prev)
+        log.critical("prolong charge_hold FAILED for order %s — RECONCILE", order.id)
+        raise PurchaseError()
+    exp = order.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=dt.timezone.utc)
+    new_expiry = exp + dt.timedelta(hours=duration)
+    await repo.update_order(order.id, expires_at=new_expiry, status=prev)
+    log.info("Rent order %s EXTENDED +%sh -> %s (charged %s)",
+             order.id, duration, new_expiry, price)
+    return True
+
+
 def stored_sms(order: Order) -> list[dict]:
     try:
         data = json.loads(order.code or "[]")

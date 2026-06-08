@@ -162,6 +162,16 @@ async def rent_poller(bot: Bot, hero: HeroSMSClient) -> None:
 async def _poll_rents_once(bot: Bot, hero: HeroSMSClient) -> None:
     from services import rent as rent_svc
 
+    # Self-heal: a rental stuck in PROLONGING (crash mid-extend) is reset to WAITING
+    # so normal polling resumes. The flip is sub-second, so anything older than 120s
+    # is genuinely stuck. (get_open_rent_orders excludes PROLONGING, so an in-flight
+    # extend is transparently skipped by normal SMS polling.)
+    for order in await repo.get_prolonging_orders():
+        if _now() - _aware(order.updated_at) > dt.timedelta(seconds=120):
+            if await repo.close_order(order.id, Order.WAITING, (Order.PROLONGING,)):
+                log.warning("rent order %s stuck in PROLONGING — reset to WAITING", order.id)
+                await _sync_rent_card(bot, await repo.get_order(order.id))
+
     for order in await repo.get_open_rent_orders():
         try:
             if _now() >= _aware(order.expires_at):

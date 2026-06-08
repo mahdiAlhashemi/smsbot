@@ -89,8 +89,20 @@ class RentBuy(CallbackData, prefix="rb"):
 
 
 class RentAct(CallbackData, prefix="ra"):
-    action: str  # cancel | finish | refresh
+    action: str  # cancel | finish | refresh | extend | card
     id: int
+
+
+class RentExt(CallbackData, prefix="rx"):
+    """Picked an extension duration -> confirm screen (h=0 means 'back to menu')."""
+    id: int
+    h: int
+
+
+class RentExtGo(CallbackData, prefix="rxg"):
+    """Final confirm of a rental extension — this charges the user."""
+    id: int
+    h: int
 
 
 # ─── eSIM flow ──────────────────────────────────────────────────────────────

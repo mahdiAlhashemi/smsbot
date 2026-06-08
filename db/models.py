@@ -69,6 +69,7 @@ class Order(Base):
     COMPLETED = "completed"  # activation finished/confirmed
     CANCELED = "canceled"    # cancelled, hold released
     EXPIRED = "expired"      # timed out, hold released
+    PROLONGING = "prolonging"  # transient: a rental is being extended (charge in-flight)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)

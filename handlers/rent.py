@@ -10,13 +10,14 @@ from aiogram.types import CallbackQuery
 
 from country_flags import flag
 from db import repo
+from db.models import Order
 from handlers.common import safe_edit
 from keyboards.callbacks import (
-    Nav, RentAct, RentBuy, RentConf, RentCty, RentCtyPage, RentDur, RentSvcPage,
+    Nav, RentAct, RentBuy, RentConf, RentCty, RentCtyPage, RentDur, RentExt, RentExtGo, RentSvcPage,
 )
 from keyboards.menus import (
     back_button, rent_confirm_keyboard, rent_countries_keyboard, rent_durations_keyboard,
-    rent_order_keyboard, rent_services_keyboard,
+    rent_extend_confirm_keyboard, rent_extend_keyboard, rent_order_keyboard, rent_services_keyboard,
 )
 from services import pricing, rent as rent_svc
 from services import orders as order_svc
@@ -259,3 +260,124 @@ async def cancel_rent_cb(call: CallbackQuery, callback_data: RentAct) -> None:
         else "⚠️ Could not cancel — it may have just ended.",
         show_alert=True,
     )
+
+
+# ─── Extend a rental (prolong) ───────────────────────────────────────────────
+async def _owned_rent(call: CallbackQuery, order_id: int) -> Order | None:
+    order = await repo.get_order(order_id)
+    if order is None or order.user_id != call.from_user.id:
+        await call.answer("❌ Order not found.", show_alert=True)
+        return None
+    return order
+
+
+async def _prolong_cost(hero, activation_id: str, h: int):
+    """Wholesale cost for extending by ``h`` hours, or None if not offered."""
+    try:
+        raw = await hero.prolong_options(activation_id)
+    except Exception:  # noqa: BLE001
+        return None
+    return rent_svc.parse_prolong_options(raw).get(h)
+
+
+@router.callback_query(RentAct.filter(F.action == "card"))
+async def show_rent_card(call: CallbackQuery, callback_data: RentAct) -> None:
+    order = await _owned_rent(call, callback_data.id)
+    if order is None:
+        return
+    await safe_edit(call, rent_svc.format_rent_card(order), rent_order_keyboard(order))
+    await call.answer()
+
+
+@router.callback_query(RentAct.filter(F.action == "extend"))
+async def open_extend(call: CallbackQuery, callback_data: RentAct) -> None:
+    order = await _owned_rent(call, callback_data.id)
+    if order is None:
+        return
+    if order.status not in (Order.WAITING, Order.RECEIVED):
+        await call.answer("This rental can't be extended anymore.", show_alert=True)
+        return
+    await call.answer("Loading…")
+    cost_map = await _prolong_cost_map(get_ctx().hero, order.activation_id)
+    if cost_map is None:
+        await safe_edit(call, "⚠️ Couldn't load extension options. Please try again.",
+                        rent_order_keyboard(order))
+        return
+    options = []
+    for h, _lbl in rent_svc.RENT_DURATIONS:
+        if h in cost_map:
+            options.append((h, await pricing.commission_price(cost_map[h])))
+    if not options:
+        await safe_edit(call, "ℹ️ No extension is available for this number right now.",
+                        rent_order_keyboard(order))
+        return
+    await safe_edit(
+        call,
+        "⏳ <b>Extend rental</b>\n────────────────\n"
+        "Keep this number and its OTPs for longer.\n\n👇 <b>Add how much time?</b>",
+        rent_extend_keyboard(order.id, options),
+    )
+
+
+async def _prolong_cost_map(hero, activation_id: str):
+    try:
+        raw = await hero.prolong_options(activation_id)
+    except Exception:  # noqa: BLE001
+        return None
+    return rent_svc.parse_prolong_options(raw)
+
+
+@router.callback_query(RentExt.filter())
+async def confirm_extend(call: CallbackQuery, callback_data: RentExt) -> None:
+    order = await _owned_rent(call, callback_data.id)
+    if order is None:
+        return
+    h = callback_data.h
+    cost = await _prolong_cost(get_ctx().hero, order.activation_id, h)
+    if cost is None:
+        await safe_edit(call, "ℹ️ That extension is no longer available. Pick another.",
+                        rent_order_keyboard(order))
+        return
+    price = await pricing.commission_price(cost)
+    await safe_edit(
+        call,
+        "🧾 <b>Confirm extension</b>\n────────────────\n"
+        f"⏱️ Add: <b>{DURATION_LABELS.get(h, str(h) + 'h')}</b>\n"
+        f"💵 Price: <b>{money(price)}</b>\n\n"
+        "<i>⚡ Charged upfront. Your number keeps receiving OTPs and its active "
+        "time increases by the chosen period.</i>",
+        rent_extend_confirm_keyboard(order.id, h),
+    )
+    await call.answer()
+
+
+@router.callback_query(RentExtGo.filter())
+async def do_extend(call: CallbackQuery, callback_data: RentExtGo) -> None:
+    order = await _owned_rent(call, callback_data.id)
+    if order is None:
+        return
+    h = callback_data.h
+    ctx = get_ctx()
+    cost = await _prolong_cost(ctx.hero, order.activation_id, h)
+    if cost is None:
+        await safe_edit(call, "ℹ️ That extension just became unavailable. Pick another.",
+                        rent_order_keyboard(order))
+        return
+    await call.answer("Extending…")
+    try:
+        await rent_svc.prolong_rent(order, h, cost, ctx.hero)
+    except order_svc.InsufficientFunds:
+        await safe_edit(call, "💳 Not enough balance to extend — top up your wallet and try again.",
+                        back_button("wallet"))
+        return
+    except order_svc.ProlongError as exc:
+        fresh = await repo.get_order(order.id) or order
+        await safe_edit(call, f"⚠️ {exc.user_message}", rent_order_keyboard(fresh))
+        return
+    except order_svc.PurchaseError as exc:
+        fresh = await repo.get_order(order.id) or order
+        await safe_edit(call, f"⚠️ {exc.user_message}", rent_order_keyboard(fresh))
+        return
+    order = await repo.get_order(order.id)
+    await safe_edit(call, rent_svc.format_rent_card(order), rent_order_keyboard(order))
+    await call.answer("✅ Rental extended!")

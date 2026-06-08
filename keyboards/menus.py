@@ -28,6 +28,8 @@ from keyboards.callbacks import (
     RentCty,
     RentCtyPage,
     RentDur,
+    RentExt,
+    RentExtGo,
     RentSvcPage,
     SvcPage,
     SvcPick,
@@ -274,6 +276,13 @@ def rent_confirm_keyboard(h: int, country: str, code: str, *, can_afford: bool) 
 def rent_order_keyboard(order: Order) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     if order.status in (Order.WAITING, Order.RECEIVED):
+        # Extend (prolong) — only while the rental still has time left.
+        import datetime as _dt
+        exp = order.expires_at
+        if exp is not None:
+            exp = exp if exp.tzinfo else exp.replace(tzinfo=_dt.timezone.utc)
+            if exp > _dt.datetime.now(_dt.timezone.utc):
+                b.button(text="🔁 Extend rental", callback_data=RentAct(action="extend", id=order.id))
         # Rent cancel policy: refundable only AFTER 2 min and NO LATER than 20 min.
         from utils import rent_cancel_state
         state, secs = rent_cancel_state(order)
@@ -285,6 +294,27 @@ def rent_order_keyboard(order: Order) -> InlineKeyboardMarkup:
             b.button(text="🛑 Finish rental", callback_data=RentAct(action="finish", id=order.id))
         b.adjust(1)
     b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
+    return b.as_markup()
+
+
+def rent_extend_keyboard(order_id: int, options: list[tuple[int, Decimal]]) -> InlineKeyboardMarkup:
+    """One button per offered (hours, sell_price) extension, + Back to the card."""
+    from services.rent import DURATION_LABELS
+    b = InlineKeyboardBuilder()
+    for hours, sell in options:
+        lbl = DURATION_LABELS.get(hours, f"{hours}h")
+        b.button(text=f"📅 {lbl} • {money(sell)}", callback_data=RentExt(id=order_id, h=hours))
+    b.adjust(1)
+    b.row(InlineKeyboardButton(
+        text="⬅️ Back", callback_data=RentAct(action="card", id=order_id).pack()))
+    return b.as_markup()
+
+
+def rent_extend_confirm_keyboard(order_id: int, h: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Confirm extend", callback_data=RentExtGo(id=order_id, h=h))
+    b.button(text="⬅️ Back", callback_data=RentAct(action="extend", id=order_id))
+    b.adjust(1)
     return b.as_markup()
 
 

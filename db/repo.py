@@ -255,6 +255,19 @@ async def get_open_rent_orders() -> list[Order]:
         return list(result.scalars().all())
 
 
+async def get_prolonging_orders() -> list[Order]:
+    """Rentals stuck mid-extend (status PROLONGING) — the rent poller self-heals
+    any that have been stuck longer than a normal extend should take."""
+    async with session_factory() as s:
+        result = await s.execute(
+            select(Order).where(
+                Order.status == Order.PROLONGING,
+                Order.kind == "rent",
+            )
+        )
+        return list(result.scalars().all())
+
+
 async def get_open_esim_orders() -> list[Order]:
     """eSIM orders still being provisioned (the eSIM poller fetches their QR)."""
     async with session_factory() as s:

@@ -223,6 +223,86 @@ async def main():
     check("stats completed", stats["completed"] == 1)
     check("stats profit", stats["profit"] == Decimal("0.20"))
 
+    print("[rent extend / prolong (Feature C)]")
+    from services import rent as rsvc, pricing as _pricing
+
+    check("parse_prolong_options envelope + defensive keys + drop non-positive",
+          rsvc.parse_prolong_options({"data": {"options": [
+              {"hours": 24, "price": 0.46}, {"hours": 72, "cost": 1.2},
+              {"hours": 168, "price": 0}]}}) == {24: Decimal("0.46"), 72: Decimal("1.2")})
+
+    class _PHero:
+        def __init__(self, fail=False):
+            self.fail = fail
+
+        async def prolong(self, aid, duration):
+            if self.fail:
+                raise Exception("provider down")
+            return None
+
+    async def _mk_rent(uid, bal, status=Order.WAITING):
+        await repo.get_or_create_user(uid, None, None, False)
+        await repo.credit(uid, bal)
+        t0 = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+        o = await repo.create_order(
+            user_id=uid, kind="rent", activation_id=f"R{uid}", service="full",
+            service_name="Rent", country="0", country_name="Russia",
+            phone="79990000000", cost=Decimal("0.40"), price=Decimal("0.50"),
+            status=status, expires_at=t0,
+        )
+        return o, t0
+
+    def _exp_eq(o, target):
+        return abs((o.expires_at.replace(tzinfo=dt.timezone.utc) - target).total_seconds()) < 2
+
+    _cost = Decimal("0.40")
+    _exp_price = await _pricing.commission_price(_cost)
+
+    # (a) happy path — charged once, status restored, expiry +24h
+    o, t0 = await _mk_rent(201, Decimal("5.00"))
+    ok = await rsvc.prolong_rent(o, 24, _cost, _PHero())
+    u = await repo.get_user(201); o = await repo.get_order(o.id)
+    check("prolong happy True", ok is True)
+    check("prolong charged once", u.balance == Decimal("5.00") - _exp_price and u.held == Decimal("0"))
+    check("prolong status restored", o.status == "waiting")
+    check("prolong expiry +24h", _exp_eq(o, t0 + dt.timedelta(hours=24)))
+
+    # (b) insufficient funds — no charge, status + expiry untouched
+    o, t0 = await _mk_rent(202, Decimal("0.01"))
+    r = False
+    try:
+        await rsvc.prolong_rent(o, 24, _cost, _PHero())
+    except osvc.InsufficientFunds:
+        r = True
+    u = await repo.get_user(202); o = await repo.get_order(o.id)
+    check("prolong insufficient raises", r)
+    check("prolong insufficient no charge", u.balance == Decimal("0.01") and u.held == Decimal("0"))
+    check("prolong insufficient status+expiry intact", o.status == "waiting" and _exp_eq(o, t0))
+
+    # (c) provider error — hold released, ORIGINAL expiry preserved
+    o, t0 = await _mk_rent(203, Decimal("5.00"))
+    r = False
+    try:
+        await rsvc.prolong_rent(o, 24, _cost, _PHero(fail=True))
+    except osvc.PurchaseError:
+        r = True
+    u = await repo.get_user(203); o = await repo.get_order(o.id)
+    check("prolong provider-error raises", r)
+    check("prolong provider-error no charge + hold released",
+          u.balance == Decimal("5.00") and u.held == Decimal("0"))
+    check("prolong provider-error status+expiry intact", o.status == "waiting" and _exp_eq(o, t0))
+
+    # (d) guard — a closed rental can't be extended (no charge)
+    o, t0 = await _mk_rent(204, Decimal("5.00"), status=Order.CANCELED)
+    r = False
+    try:
+        await rsvc.prolong_rent(o, 24, _cost, _PHero())
+    except osvc.ProlongError:
+        r = True
+    u = await repo.get_user(204)
+    check("prolong guard raises on closed rental", r)
+    check("prolong guard no charge", u.balance == Decimal("5.00") and u.held == Decimal("0"))
+
     print("[deposit bonus + referral]")
     from services import billing  # noqa: PLC0415
     await repo.get_or_create_user(300, "carol", "Carol", False)
