@@ -32,7 +32,10 @@ async def list_orders(call: CallbackQuery) -> None:
         lines.append("<b>Recent history</b>\n")
         for o in history:
             label = STATUS_LABELS.get(o.status, o.status)
-            code = f" — 🔑 <code>{o.code}</code>" if o.code else ""
+            # Only sms orders carry a single display code; rent/esim store JSON in
+            # .code (don't print it raw). latest_code() reads the new JSON list.
+            lc = order_svc.latest_code(o) if o.kind == "sms" else None
+            code = f" — 🔑 <code>{lc}</code>" if lc else ""
             lines.append(
                 f"🧾 #{o.id} <b>{o.service_name or o.service}</b> "
                 f"({o.country_name or o.country}) — <b>{money(o.price)}</b> — {label}{code}"

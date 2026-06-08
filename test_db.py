@@ -91,6 +91,60 @@ async def main():
     needing = await repo.get_orders_needing_release()
     check("released order cleared", all(x.id != order.id for x in needing))
 
+    print("[multi-code display (Feature A)]")
+    from services import orders as osvc
+    import json as _json
+
+    class _FO:
+        def __init__(self, code):
+            self.code = code
+
+    check("stored_codes empty", osvc.stored_codes(_FO(None)) == [])
+    check("stored_codes legacy bare str", osvc.stored_codes(_FO("ABC123"))[0]["code"] == "ABC123")
+    check("stored_codes legacy numeric", osvc.stored_codes(_FO("123456"))[0]["code"] == "123456")
+    _lst = _json.dumps([{"type": "sms", "code": "111", "text": "a", "at": ""},
+                        {"type": "call", "code": "222", "text": "b", "at": ""}])
+    check("stored_codes json list len", len(osvc.stored_codes(_FO(_lst))) == 2)
+    check("latest_code returns last", osvc.latest_code(_FO(_lst)) == "222")
+    _m = osvc._merge_codes([{"type": "sms", "code": "111"}],
+                           [{"type": "sms", "code": "111"}, {"type": "sms", "code": "333"}])
+    check("merge dedups + appends", [e["code"] for e in _m] == ["111", "333"])
+    check("merge drops empty code", osvc._merge_codes([], [{"type": "sms", "code": ""}]) == [])
+
+    # deliver_code: appends to the JSON list AND charges the hold exactly once
+    await repo.credit(100, Decimal("5.00"))
+    await repo.try_hold(100, Decimal("0.60"))
+    # Use a throwaway service/country so deliver_code's stat doesn't collide with
+    # the [service stats badges] section's exact-count assertion below.
+    mc = await repo.create_order(
+        user_id=100, activation_id="MC1", service="zz", service_name="ZZ",
+        country="99", country_name="Nowhere", phone="79990002233",
+        cost=Decimal("0.40"), price=Decimal("0.60"), status=Order.WAITING,
+        expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=20),
+    )
+    bal_before = (await repo.get_user(100)).balance
+    d1 = await osvc.deliver_code(mc, "555111")
+    o2 = await repo.get_order(mc.id)
+    check("deliver_code first ok", d1 and osvc.latest_code(o2) == "555111")
+    bal_after = (await repo.get_user(100)).balance
+    check("deliver_code charged once", bal_before - bal_after == Decimal("0.60"))
+
+    class _FakeHero:
+        async def get_all_sms(self, aid, page=1, size=20):
+            return [{"code": "555111", "text": "Your code 555111", "date": "t1"},
+                    {"code": "777222", "text": "Second 777222", "date": "t2"}]
+
+        async def get_status_v2(self, aid):
+            return {"verificationType": 1, "sms": {},
+                    "call": {"code": "999333", "text": "voice", "dateTime": "t3"}}
+
+    new = await osvc.collect_codes(await repo.get_order(mc.id), _FakeHero())
+    o2 = await repo.get_order(mc.id)
+    codes = [e["code"] for e in osvc.stored_codes(o2)]
+    check("collect appends only new", set(e["code"] for e in new) == {"777222", "999333"})
+    check("collect dedups existing", codes == ["555111", "777222", "999333"])
+    check("collect_codes is display-only", (await repo.get_user(100)).balance == bal_after)
+
     print("[payments idempotency]")
     pay = await repo.create_payment(
         user_id=100, provider="cryptobot", invoice_id="INV1",

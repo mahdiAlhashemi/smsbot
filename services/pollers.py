@@ -22,6 +22,12 @@ from utils import format_order, money
 
 log = logging.getLogger(__name__)
 
+# Throttle for collecting extra SMS/voice codes on already-RECEIVED orders
+# (order_id -> last collect monotonic time). Display-only, so a coarse cadence
+# is fine and keeps provider API volume low.
+_last_code_collect: dict[int, float] = {}
+_CODE_COLLECT_EVERY_SEC = 12
+
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
@@ -65,6 +71,9 @@ async def _handle_order(bot: Bot, hero: HeroSMSClient, order: Order) -> None:
         if status == "OK" and code:
             # Charge-on-receive: this is where the customer actually pays.
             if await order_svc.deliver_code(order, code):
+                # Grab any additional SMS / voice code already waiting in the same
+                # window (display only — no extra charge).
+                await order_svc.collect_codes(await repo.get_order(order.id), hero)
                 fresh = await repo.get_order(order.id)
                 await _sync_card(bot, fresh)  # auto-refresh the card in place
                 await _notify(
@@ -88,6 +97,24 @@ async def _handle_order(bot: Bot, hero: HeroSMSClient, order: Order) -> None:
             # Code was delivered & charged; confirm usage and close.
             await order_svc.complete_order(order, hero)
             await _sync_card(bot, await repo.get_order(order.id))
+            _last_code_collect.pop(order.id, None)
+        else:
+            # Keep showing any further SMS / voice codes that arrive on this number
+            # (display only — no charge). Throttled to stay gentle on the provider.
+            if time.monotonic() - _last_code_collect.get(order.id, 0.0) >= _CODE_COLLECT_EVERY_SEC:
+                _last_code_collect[order.id] = time.monotonic()
+                new = await order_svc.collect_codes(order, hero)
+                if new:
+                    await _sync_card(bot, await repo.get_order(order.id))
+                    for e in new:
+                        c = e.get("code") or ""
+                        if not c:
+                            continue
+                        icon = "📞" if e.get("type") == "call" else "🔑"
+                        await _notify(
+                            bot, order.user_id,
+                            f"{icon} <b>New code</b> — order #{order.id}\n\n<code>{c}</code>",
+                        )
 
 
 async def _sync_card(bot: Bot, order: Order) -> None:

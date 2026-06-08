@@ -13,6 +13,7 @@ Money model — CHARGE ON RECEIVE:
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 from decimal import Decimal
 
@@ -22,6 +23,7 @@ from herosms import HeroSMSClient, HeroSMSError, NoNumbersError
 from services import pricing
 from services.catalog import Catalog
 from config import settings
+from utils import extract_code
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +49,87 @@ class DuplicateOrder(PurchaseError):
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
+
+
+# ── received codes (multiple SMS + voice) stored as a JSON list on Order.code ──
+# Each entry: {"type": "sms"|"call", "code": str, "text": str, "at": str}.
+# Backward-compatible: a legacy bare-string (or numeric) code parses as one entry,
+# so in-flight orders self-heal with no migration.
+def stored_codes(order: Order) -> list[dict]:
+    raw = getattr(order, "code", None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return [{"type": "sms", "code": str(raw), "text": str(raw), "at": ""}]
+    if isinstance(data, list):
+        return [e for e in data if isinstance(e, dict)]
+    # legacy numeric code (json parses "123456" as int) or any scalar
+    return [{"type": "sms", "code": str(data), "text": str(data), "at": ""}]
+
+
+def _code_key(entry: dict) -> str:
+    code = entry.get("code") or extract_code(entry.get("text", "")) or (entry.get("text") or "").strip()
+    return f"{entry.get('type', 'sms')}:{code}"
+
+
+def _merge_codes(existing: list[dict], new: list[dict]) -> list[dict]:
+    """Append-only union (dedup by _code_key); never shrinks, so a transient empty
+    getAllSms can't wipe an already-shown code. Empty-code entries are dropped."""
+    seen = {_code_key(e) for e in existing}
+    out = list(existing)
+    for e in new:
+        k = _code_key(e)
+        if k.split(":", 1)[1] and k not in seen:
+            seen.add(k)
+            out.append(e)
+    return out
+
+
+def latest_code(order: Order) -> str | None:
+    """The most recent usable code (for compact history rows). None if none."""
+    for e in reversed(stored_codes(order)):
+        c = e.get("code") or extract_code(e.get("text", ""))
+        if c:
+            return str(c)
+    return None
+
+
+async def collect_codes(order: Order, hero: HeroSMSClient) -> list[dict]:
+    """Read ALL SMS (getAllSms) + any voice-call code (getStatusV2) for an
+    activation and append genuinely-new ones to the order's display list.
+
+    DISPLAY ONLY — never touches balance/held/holds. Returns the new entries so
+    the caller can notify the user. Provider/parse errors degrade to no-op.
+    """
+    new_entries: list[dict] = []
+    try:
+        for s in await hero.get_all_sms(order.activation_id) or []:
+            if not isinstance(s, dict):
+                continue
+            text = s.get("text") or s.get("smsText") or ""
+            code = s.get("code") or extract_code(text)
+            new_entries.append({"type": "sms", "code": str(code or ""), "text": str(text),
+                                "at": str(s.get("date") or s.get("dateTime") or "")})
+    except Exception:  # noqa: BLE001 — display only, never raise into the poller
+        pass
+    try:
+        v2 = await hero.get_status_v2(order.activation_id)
+        call = v2.get("call") if isinstance(v2, dict) else None
+        if isinstance(call, dict) and call.get("code"):
+            new_entries.append({"type": "call", "code": str(call.get("code")),
+                                "text": str(call.get("text") or ""),
+                                "at": str(call.get("dateTime") or "")})
+    except Exception:  # noqa: BLE001
+        pass
+    existing = stored_codes(order)
+    merged = _merge_codes(existing, new_entries)
+    if len(merged) == len(existing):
+        return []
+    await repo.update_order(order.id, code=json.dumps(merged))
+    existing_keys = {_code_key(e) for e in existing}
+    return [e for e in merged if _code_key(e) not in existing_keys]
 
 
 async def purchase(
@@ -140,12 +223,14 @@ async def purchase(
     return order
 
 
-async def deliver_code(order: Order, code: str) -> bool:
+async def deliver_code(order: Order, code: str, entries: list[dict] | None = None) -> bool:
     """A code arrived: charge the held funds and record the code.
 
     Wins the WAITING→RECEIVED transition atomically so the charge happens exactly
     once even if the poller and a manual refresh race. Returns True if THIS call
-    delivered the code.
+    delivered the code. The code is appended to the order's JSON code list (so a
+    number that yields several codes keeps them all); ``entries`` lets callers
+    pass richer items, else a single sms entry is built from ``code``.
     """
     if not await repo.close_order(order.id, Order.RECEIVED, (Order.WAITING,)):
         return False
@@ -159,7 +244,10 @@ async def deliver_code(order: Order, code: str) -> bool:
             "charge_hold FAILED for order %s — released hold; code delivered "
             "uncharged, RECONCILE manually", order.id,
         )
-    await repo.update_order(order.id, code=code)
+    new = entries or [{"type": "sms", "code": str(code), "text": str(code),
+                       "at": _now().strftime("%Y-%m-%d %H:%M:%S")}]
+    merged = _merge_codes(stored_codes(order), new)
+    await repo.update_order(order.id, code=json.dumps(merged))
     if order.kind == "sms":
         await repo.record_stat(order.service, order.country, delivered=True)
     log.info("Order %s RECEIVED, charged=%s amount=%s", order.id, charged, order.price)
@@ -371,9 +459,10 @@ async def request_another_code(order: Order, hero: HeroSMSClient) -> str:
         log.warning("request_another_code %s failed: %s", order.activation_id, exc.code)
         return ANOTHER_ERROR
     # Give the reopened order a fresh code window (else the poller would EXPIRE it
-    # immediately on the stale expires_at) and clear the old code.
+    # immediately on the stale expires_at). KEEP the accumulated codes so the card
+    # still shows the previously received ones; the new code is appended on arrival.
     await repo.update_order(
-        order.id, code=None,
+        order.id,
         expires_at=_now() + dt.timedelta(minutes=settings.order_timeout_min),
     )
     return ANOTHER_OK

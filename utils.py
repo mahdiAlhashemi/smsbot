@@ -113,7 +113,24 @@ def format_order(order) -> str:
         if secs > 0:
             m, s = divmod(secs, 60)
             lines.append(f"⏱ Time left: <b>{m}:{s:02d}</b>")
-    if order.code:
+    # Codes received — a number can yield several SMS + a voice code. Stored as a
+    # JSON list on Order.code (lazy import avoids a utils<->services import cycle).
+    codes: list[dict] = []
+    try:
+        from services.orders import stored_codes
+        codes = stored_codes(order)
+    except Exception:  # noqa: BLE001
+        codes = []
+    if codes:
+        lines.append(f"\n🔑 <b>Codes received ({len(codes)})</b>")
+        for e in codes[-6:]:
+            c = e.get("code") or extract_code(e.get("text", "")) or ""
+            icon = "📞" if e.get("type") == "call" else "🔑"
+            if c:
+                lines.append(f"{icon} <code>{c}</code>  <i>(tap to copy)</i>")
+            elif e.get("text"):
+                lines.append(f"• <code>{short(e.get('text'), 60)}</code>")
+    elif order.code:
         lines.append(f"\n💬 Code: <code>{order.code}</code>")
     lines.append(f"\n<i>Order #{order.id}</i>")
     return "\n".join(lines)
