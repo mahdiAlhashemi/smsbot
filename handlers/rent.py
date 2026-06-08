@@ -59,6 +59,21 @@ async def _show_rent_countries(call: CallbackQuery, h: int, page: int) -> None:
     if not ids:
         await safe_edit(call, "ℹ️ No rent countries available right now.", back_button("rent"))
         return
+    # HeroSMS lists the same countries for every duration, but many have no stock
+    # for longer rentals — keep only those that actually have numbers for THIS
+    # duration so the user never hits a 'no rentals here' dead-end.
+    try:
+        ids = await ctx.catalog.rent_countries_in_stock(h, ids)
+    except Exception:  # noqa: BLE001
+        pass  # on scan failure, fall back to the full list (better than empty)
+    if not ids:
+        await safe_edit(
+            call,
+            f"ℹ️ No rentals are in stock for <b>{DURATION_LABELS.get(h, str(h) + 'h')}</b> "
+            "right now.\n\n<i>💡 Try a shorter period — 1-day numbers are usually available.</i>",
+            back_button("rent"),
+        )
+        return
     # Sort countries A → Z by name.
     ids.sort(key=lambda cid: names.get(str(cid), "zzz").lower())
     await safe_edit(

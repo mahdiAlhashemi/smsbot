@@ -66,6 +66,9 @@ class Catalog:
         self._countries = _TTL(600)
         self._prices: dict[str, _TTL] = {}
         self._prices_lock = asyncio.Lock()
+        # Per-duration list of country ids that actually have rentals in stock.
+        self._rent_stock: dict[int, _TTL] = {}
+        self._rent_stock_lock = asyncio.Lock()
 
     async def services(self) -> list[dict]:
         async with self._services._lock:
@@ -145,3 +148,34 @@ class Catalog:
             self._prices.clear()
         else:
             self._prices.pop(service, None)
+
+    # ── rentals: which countries actually have stock for a given duration ──────
+    async def rent_countries_in_stock(self, duration: int, all_ids: list[int]) -> list[int]:
+        """Subset of ``all_ids`` that genuinely have rentable services for
+        ``duration``. HeroSMS lists the SAME static country set for every
+        duration, but longer rentals (3d/1w/1m) are out of stock in many of them
+        — so the raw list dead-ends with 'no rentals here'. We probe each country
+        once (bounded concurrency) and cache per duration. Falls back to the full
+        list if the scan can't run, so we never wrongly show an empty menu."""
+        async with self._rent_stock_lock:
+            ttl = self._rent_stock.get(duration)
+            if ttl is None:
+                ttl = self._rent_stock[duration] = _TTL(300)
+        async with ttl._lock:
+            if not ttl.fresh():
+                ttl.set(await self._scan_rent_stock(duration, all_ids))
+            return ttl.value or list(all_ids)
+
+    async def _scan_rent_stock(self, duration: int, all_ids: list[int]) -> list[int]:
+        sem = asyncio.Semaphore(5)  # HeroSMS is rate-limited; keep it gentle
+
+        async def has_stock(cid: int):
+            async with sem:
+                try:
+                    rows = await self._client.rent_service_prices(duration, str(cid))
+                    return cid if rows else None
+                except Exception:  # noqa: BLE001
+                    return None  # treat probe errors as "unknown" -> drop from list
+
+        results = await asyncio.gather(*(has_stock(c) for c in all_ids))
+        return [c for c in results if c is not None]
