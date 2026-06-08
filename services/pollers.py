@@ -273,6 +273,75 @@ async def _poll_esim_once(bot: Bot) -> None:
             log.exception("error provisioning eSIM order %s", order.id)
 
 
+# ─── Email poller: deliver the OTP (charge on receive) ───────────────────────
+async def email_poller(bot: Bot) -> None:
+    interval = max(5, settings.email_poll_interval_sec)
+    log.info("email poller started (interval=%ss)", interval)
+    while True:
+        try:
+            await _poll_emails_once(bot)
+        except Exception:  # noqa: BLE001
+            log.exception("email poller iteration failed")
+        await asyncio.sleep(interval)
+
+
+async def _poll_emails_once(bot: Bot) -> None:
+    ctx = get_ctx()
+    if ctx.herov1 is None:
+        return
+    from services import emails as email_svc
+
+    for order in await repo.get_open_email_orders():
+        try:
+            expired = _now() >= _aware(order.expires_at)
+            if order.status == Order.WAITING:
+                status, code = await email_svc.poll_email_status(order, ctx.herov1)
+                if status == "SUCCESS" and code:
+                    # Charge-on-receive (atomic, exactly-once via deliver_code).
+                    if await order_svc.deliver_code(order, code):
+                        await _sync_email_card(bot, await repo.get_order(order.id))
+                        await _notify(
+                            bot, order.user_id,
+                            f"🔑 <b>Email code received</b>\n\n<code>{code}</code>\n\n"
+                            f"💰 Charged: <b>{money(order.price)}</b>",
+                        )
+                    continue
+                if status == "CANCEL":
+                    await email_svc.close_email_unfilled(order, ctx.herov1, final_status=Order.CANCELED)
+                    await _sync_email_card(bot, await repo.get_order(order.id))
+                    await _notify(bot, order.user_id,
+                                  f"❌ <b>Email #{order.id}</b> was cancelled by the provider — not charged.")
+                    continue
+                if expired:
+                    await email_svc.close_email_unfilled(order, ctx.herov1, final_status=Order.EXPIRED)
+                    await _sync_email_card(bot, await repo.get_order(order.id))
+                    await _notify(bot, order.user_id,
+                                  f"⌛ <b>Email #{order.id}</b> expired with no code — not charged.")
+                    continue
+                await _sync_email_card(bot, order)  # tick the countdown
+            elif order.status == Order.RECEIVED:
+                if expired:
+                    await email_svc.complete_email(order, ctx.herov1)
+                    await _sync_email_card(bot, await repo.get_order(order.id))
+        except Exception:  # noqa: BLE001
+            log.exception("error polling email order %s", order.id)
+
+
+async def _sync_email_card(bot: Bot, order: Order) -> None:
+    if not order or not order.chat_id or not order.message_id:
+        return
+    from services import emails as email_svc
+    from keyboards.menus import email_order_keyboard
+    try:
+        await bot.edit_message_text(
+            email_svc.format_email_card(order), chat_id=order.chat_id,
+            message_id=order.message_id, reply_markup=email_order_keyboard(order),
+            disable_web_page_preview=True,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ─── Queue poller: fulfil PENDING orders by retrying getNumber ───────────────
 async def queue_poller(bot: Bot, hero: HeroSMSClient) -> None:
     log.info("queue poller started (interval=%ss, give-up=%smin)",
@@ -482,6 +551,8 @@ def start_pollers() -> list[asyncio.Task]:
     ]
     if ctx.esim is not None:
         tasks.append(asyncio.create_task(esim_poller(ctx.bot), name="esim_poller"))
+    if ctx.herov1 is not None:
+        tasks.append(asyncio.create_task(email_poller(ctx.bot), name="email_poller"))
     if ctx.payments is not None:
         tasks.append(asyncio.create_task(payment_poller(ctx.bot, ctx.payments), name="payment_poller"))
     tasks.append(asyncio.create_task(

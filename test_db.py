@@ -401,6 +401,81 @@ async def main():
     res = await osvc.reactivate_number(o, _RHero(), _Cat())
     check("reactivate rejects non-sms", res == osvc.REACT_ERROR)
 
+    print("[email OTP product (Feature D)]")
+    from services import emails as esvc
+    from herosms.v1 import HeroSMSV1Error
+
+    class _MHero:
+        def __init__(self, status="WAIT", value=None, fail=False):
+            self.status = status
+            self.value = value
+            self.fail = fail
+            self.canceled = []
+            self.reordered = []
+
+        async def email_purchase(self, site, domain):
+            if self.fail:
+                raise HeroSMSV1Error(422, "Validation failed", "bad")
+            return {"data": {"id": 55501, "email": f"john@{domain}", "status": "WAIT", "cost": 0.045}}
+
+        async def email_status(self, eid):
+            return {"data": {"id": eid, "status": self.status, "value": self.value}}
+
+        async def email_cancel(self, eid):
+            self.canceled.append(eid)
+
+        async def email_reorder(self, eid):
+            self.reordered.append(eid)
+
+    _ec = await _pricing.commission_price(Decimal("0.045"))
+
+    # (a) purchase HOLDS (no charge), creates a WAITING email order
+    await repo.get_or_create_user(401, None, None, False); await repo.credit(401, Decimal("5.00"))
+    eo = await esvc.email_purchase(401, "instagram.com", "gmx.com", Decimal("0.045"), _MHero())
+    u = await repo.get_user(401)
+    check("email purchase WAITING", eo.status == "waiting" and eo.kind == "email")
+    check("email held not charged", u.held == _ec and u.balance == Decimal("5.00"))
+    check("email address stored", eo.phone == "john@gmx.com")
+
+    # (b) code arrives -> charge exactly once
+    st, code = await esvc.poll_email_status(eo, _MHero(status="SUCCESS", value="246810"))
+    check("email poll SUCCESS", st == "SUCCESS" and code == "246810")
+    await osvc.deliver_code(eo, code)
+    u = await repo.get_user(401); eo = await repo.get_order(eo.id)
+    check("email charged once", u.balance == Decimal("5.00") - _ec and u.held == Decimal("0"))
+    check("email code shown", osvc.latest_code(eo) == "246810")
+
+    # (c) no code -> close releases the hold + cancels at provider
+    await repo.get_or_create_user(402, None, None, False); await repo.credit(402, Decimal("5.00"))
+    eo2 = await esvc.email_purchase(402, "discord.com", "mail.com", Decimal("0.045"), _MHero())
+    mh2 = _MHero()
+    ok = await esvc.close_email_unfilled(eo2, mh2, final_status=Order.EXPIRED)
+    u = await repo.get_user(402); eo2 = await repo.get_order(eo2.id)
+    check("email close releases hold", ok and u.held == Decimal("0") and u.balance == Decimal("5.00"))
+    check("email closed EXPIRED", eo2.status == "expired")
+    check("email cancelled at provider", mh2.canceled == [eo2.activation_id])
+
+    # (d) insufficient funds -> no hold
+    await repo.get_or_create_user(403, None, None, False); await repo.credit(403, Decimal("0.01"))
+    r = False
+    try:
+        await esvc.email_purchase(403, "instagram.com", "gmx.com", Decimal("0.045"), _MHero())
+    except osvc.InsufficientFunds:
+        r = True
+    check("email insufficient raises", r)
+    check("email insufficient no hold", (await repo.get_user(403)).held == Decimal("0"))
+
+    # (e) provider error -> hold released
+    await repo.get_or_create_user(404, None, None, False); await repo.credit(404, Decimal("5.00"))
+    r = False
+    try:
+        await esvc.email_purchase(404, "instagram.com", "gmx.com", Decimal("0.045"), _MHero(fail=True))
+    except osvc.PurchaseError:
+        r = True
+    u = await repo.get_user(404)
+    check("email provider-error raises", r)
+    check("email provider-error hold released", u.held == Decimal("0") and u.balance == Decimal("5.00"))
+
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     # cleanup
     from db import engine

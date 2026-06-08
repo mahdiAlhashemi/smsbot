@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     # HeroSMS
     herosms_api_key: str
     herosms_base_url: str = "https://hero-sms.com/stubs/handler_api.php"
+    # HeroSMS v1 REST (Authorization: ApiKey header) — powers the Email OTP product.
+    # The v1 token is usually the SAME key as herosms_api_key; leave empty to reuse
+    # it. Email OTP stays OFF until emails_enabled is set true.
+    herosms_v1_token: str = ""
+    herosms_v1_base_url: str = "https://hero-sms.com/api/v1"
+    emails_enabled: bool = False
+    email_timeout_min: int = 30          # OTP wait window (user triggers it manually)
+    email_poll_interval_sec: int = 10
 
     # eSIM Access (esimaccess.com / RedteaGO) — data-plan eSIMs
     esim_access_code: str = ""
@@ -117,6 +125,11 @@ class Settings(BaseSettings):
     @property
     def esim_enabled(self) -> bool:
         return bool(self.esim_access_code and self.esim_secret_key)
+
+    @property
+    def herosms_v1_key(self) -> str:
+        """v1 REST token — falls back to the legacy api_key (same account)."""
+        return self.herosms_v1_token or self.herosms_api_key
 
     @property
     def support_url(self) -> str:

@@ -84,7 +84,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
             pass
     await message.answer(
         await main_menu_text(message.from_user.id),
-        reply_markup=main_menu(admin, settings.payments_enabled, settings.esim_enabled),
+        reply_markup=main_menu(admin, settings.payments_enabled, settings.esim_enabled, settings.emails_enabled),
         disable_web_page_preview=True,
     )
 
@@ -95,7 +95,7 @@ async def nav_main(call: CallbackQuery, state: FSMContext) -> None:
     await safe_edit(
         call,
         await main_menu_text(call.from_user.id),
-        main_menu(is_admin(call.from_user.id), settings.payments_enabled, settings.esim_enabled),
+        main_menu(is_admin(call.from_user.id), settings.payments_enabled, settings.esim_enabled, settings.emails_enabled),
     )
     await call.answer()
 
@@ -167,7 +167,7 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         await main_menu_text(message.from_user.id),
-        reply_markup=main_menu(is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled),
+        reply_markup=main_menu(is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled, settings.emails_enabled),
         disable_web_page_preview=True,
     )
 
@@ -183,5 +183,5 @@ async def cmd_balance(message: Message) -> None:
     bal = user.balance if user else 0
     await message.answer(
         f"💰 Balance: <b>{money(bal)}</b>",
-        reply_markup=main_menu(is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled),
+        reply_markup=main_menu(is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled, settings.emails_enabled),
     )

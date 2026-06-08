@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from aiogram import Dispatcher
 
-from handlers import account, admin, buy, common, esim, fallback, orders, rent, wallet
+from handlers import account, admin, buy, common, emails, esim, fallback, orders, rent, wallet
 from services.middleware import BlockMiddleware
 
 
@@ -14,6 +14,7 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.include_router(buy.router)
     dp.include_router(rent.router)
     dp.include_router(esim.router)
+    dp.include_router(emails.router)
     dp.include_router(orders.router)
     dp.include_router(account.router)
     dp.include_router(wallet.router)

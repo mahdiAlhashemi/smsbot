@@ -15,9 +15,10 @@ from config import settings
 from db import init_db
 from esim import EsimAccessClient
 from handlers import register_handlers
-from herosms import HeroSMSClient
+from herosms import HeroSMSClient, HeroSMSV1Client
 from services.catalog import Catalog
 from services.context import AppContext, set_ctx
+from services.emails import EmailCatalog
 from services.esim import EsimCatalog
 from services.payments import CryptoPay, OxaPay
 from services.pollers import start_pollers
@@ -139,6 +140,12 @@ async def main() -> None:
         esim_catalog = EsimCatalog(esim)
     else:
         esim = esim_catalog = None
+    # Email OTP (optional) — HeroSMS v1 REST product.
+    if settings.emails_enabled:
+        herov1 = HeroSMSV1Client(settings.herosms_v1_key, settings.herosms_v1_base_url)
+        email_catalog = EmailCatalog(herov1)
+    else:
+        herov1 = email_catalog = None
     try:
         me = await bot.get_me()
         bot_username = me.username or ""
@@ -146,7 +153,8 @@ async def main() -> None:
         bot_username = ""
     set_ctx(AppContext(
         bot=bot, hero=hero, catalog=catalog, payments=payments,
-        esim=esim, esim_catalog=esim_catalog, bot_username=bot_username,
+        esim=esim, esim_catalog=esim_catalog,
+        herov1=herov1, email_catalog=email_catalog, bot_username=bot_username,
     ))
 
     # Start pollers + Telegram polling immediately; provider connectivity checks
@@ -169,6 +177,8 @@ async def main() -> None:
             await payments.close()
         if esim is not None:
             await esim.close()
+        if herov1 is not None:
+            await herov1.close()
         await bot.session.close()
 
 

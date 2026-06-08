@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from aiogram import Bot
 
 from esim import EsimAccessClient
-from herosms import HeroSMSClient
+from herosms import HeroSMSClient, HeroSMSV1Client
 from services.catalog import Catalog
 from services.payments import CryptoPay, OxaPay
 
@@ -22,6 +22,10 @@ class AppContext:
     esim: EsimAccessClient | None = None
     # eSIM catalog cache (set in bot.py alongside `esim`).
     esim_catalog: "object | None" = None
+    # HeroSMS v1 REST client (Email OTP product), or None if emails are disabled.
+    herov1: HeroSMSV1Client | None = None
+    # Email domain catalog cache (set in bot.py alongside `herov1`).
+    email_catalog: "object | None" = None
     # Bot's @username (without @), resolved at startup — used for referral links.
     bot_username: str = ""
 

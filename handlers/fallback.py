@@ -20,6 +20,7 @@ async def unknown_text(message: Message) -> None:
         "🤔 <b>I didn't catch that.</b>\n\n"
         "👇 Choose an option from the menu below.",
         reply_markup=main_menu(
-            is_admin(message.from_user.id), settings.payments_enabled, settings.esim_enabled
+            is_admin(message.from_user.id), settings.payments_enabled,
+            settings.esim_enabled, settings.emails_enabled
         ),
     )

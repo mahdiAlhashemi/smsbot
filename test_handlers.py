@@ -55,6 +55,12 @@ def main():
     check("RentExt roundtrip", cb.RentExt.unpack(cb.RentExt(id=7, h=24).pack()).h == 24)
     check("RentExtGo roundtrip", cb.RentExtGo.unpack(cb.RentExtGo(id=7, h=168).pack()).h == 168)
     check("RentExt short", len(cb.RentExt(id=999999, h=4320).pack().encode()) <= 64)
+    check("EmailSite roundtrip",
+          cb.EmailSite.unpack(cb.EmailSite(code="instagram.com", page=0).pack()).code == "instagram.com")
+    check("EmailDomain roundtrip",
+          cb.EmailDomain.unpack(cb.EmailDomain(site="instagram.com", domain="gmx.com").pack()).domain == "gmx.com")
+    check("EmailBuy short", len(cb.EmailBuy(site="steampowered.com", domain="hotmail.com").pack().encode()) <= 64)
+    check("EmailAct roundtrip", cb.EmailAct.unpack(cb.EmailAct(action="cancel", id=5).pack()).action == "cancel")
 
     print("[keyboards build]")
     services = [{"code": "tg", "name": "Telegram"}, {"code": "wa", "name": "WhatsApp"}] * 10
@@ -80,7 +86,17 @@ def main():
         "order_done": menus.order_keyboard(Order(id=3, status=Order.COMPLETED)),
         "rent_extend_menu": menus.rent_extend_keyboard(9, [(24, Decimal("0.60")), (168, Decimal("1.20"))]),
         "rent_extend_confirm": menus.rent_extend_confirm_keyboard(9, 24),
+        "email_sites": menus.email_sites_keyboard(
+            [{"site": "instagram.com", "name": "Instagram"}, {"site": "x.com", "name": "X"}], 0),
+        "email_domains": menus.email_domains_keyboard("instagram.com", [
+            {"name": "gmx.com", "cost": Decimal("0.045"), "sell": Decimal("0.06"), "count": 100}], 0),
+        "email_confirm": menus.email_confirm_keyboard("instagram.com", "gmx.com", can_afford=True),
+        "email_order_w": menus.email_order_keyboard(Order(id=30, kind="email", status=Order.WAITING)),
+        "email_order_r": menus.email_order_keyboard(Order(id=31, kind="email", status=Order.RECEIVED)),
     }
+    _mm_email = menus.main_menu(False, True, esim_enabled=True, emails_enabled=True)
+    check("main menu shows Email button",
+          any("Email" in (btn.text or "") for row in _mm_email.inline_keyboard for btn in row))
     import datetime as _dt
     _active_rent = Order(id=9, kind="rent", status=Order.WAITING,
                          created_at=_dt.datetime.now(_dt.timezone.utc),

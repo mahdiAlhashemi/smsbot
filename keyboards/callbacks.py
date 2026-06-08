@@ -128,3 +128,33 @@ class EsimBuy(CallbackData, prefix="eb"):
 class EsimAct(CallbackData, prefix="ea"):
     action: str        # qr | usage | done
     id: int
+
+
+# ─── Email OTP flow ─────────────────────────────────────────────────────────
+class EmailSitePage(CallbackData, prefix="mlsp"):
+    page: int
+
+
+class EmailSite(CallbackData, prefix="mls"):
+    code: str          # the target website (e.g. instagram.com)
+    page: int = 0
+
+
+class EmailDomPage(CallbackData, prefix="mldp"):
+    site: str
+    page: int
+
+
+class EmailDomain(CallbackData, prefix="mld"):
+    site: str
+    domain: str        # mail domain (e.g. gmx.com) -> confirm screen
+
+
+class EmailBuy(CallbackData, prefix="mlb"):
+    site: str
+    domain: str        # final buy -> holds the price
+
+
+class EmailAct(CallbackData, prefix="mla"):
+    action: str        # cancel | another | done
+    id: int

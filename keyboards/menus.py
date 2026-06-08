@@ -14,6 +14,12 @@ from keyboards.callbacks import (
     BuyConfirm,
     CtyPage,
     CtyPick,
+    EmailAct,
+    EmailBuy,
+    EmailDomPage,
+    EmailDomain,
+    EmailSite,
+    EmailSitePage,
     EsimAct,
     EsimBuy,
     EsimPick,
@@ -45,16 +51,20 @@ COUNTRIES_PER_PAGE = 90
 TOPUP_PRESETS = ["2", "5", "10", "20", "50", "100"]
 
 
-def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False) -> InlineKeyboardMarkup:
+def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False,
+              emails_enabled: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="📲 Buy OTP number", callback_data=Nav(to="buy"))
     b.button(text="📱 Rent number", callback_data=Nav(to="rent"))
     layout = [1]
+    product_row = 1
     if esim_enabled:
         b.button(text="📡 eSIM data", callback_data=Nav(to="esim"))
-        layout.append(2)          # Rent + eSIM share a row
-    else:
-        layout.append(1)
+        product_row += 1
+    if emails_enabled:
+        b.button(text="📧 Email OTP", callback_data=Nav(to="emails"))
+        product_row += 1
+    layout.append(product_row)    # Rent (+ eSIM / Email) share a row
     b.button(text="👛 Wallet", callback_data=Nav(to="wallet"))
     b.button(text="🧾 My orders", callback_data=Nav(to="orders"))
     b.button(text="👤 Account", callback_data=Nav(to="account"))
@@ -405,6 +415,78 @@ def esim_order_keyboard(order: Order) -> InlineKeyboardMarkup:
     if order.status == Order.RECEIVED:
         b.button(text="📊 Check usage", callback_data=EsimAct(action="usage", id=order.id))
         b.button(text="🔳 Resend QR", callback_data=EsimAct(action="qr", id=order.id))
+        b.adjust(2)
+    b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
+    return b.as_markup()
+
+
+# ─── Email OTP keyboards ─────────────────────────────────────────────────────
+def email_sites_keyboard(sites: list[dict], page: int) -> InlineKeyboardMarkup:
+    """sites: [{site, name}]. Paginated 2 per row."""
+    b = InlineKeyboardBuilder()
+    per = 40
+    pages = max(1, math.ceil(len(sites) / per))
+    page = max(0, min(page, pages - 1))
+    for s in sites[page * per:(page + 1) * per]:
+        b.button(text=short(str(s.get("name", s.get("site"))), 22),
+                 callback_data=EmailSite(code=str(s["site"]), page=0))
+    b.adjust(2)
+    if pages > 1:
+        nav = InlineKeyboardBuilder()
+        if page > 0:
+            nav.button(text="◀️", callback_data=EmailSitePage(page=page - 1))
+        nav.button(text=f"{page + 1}/{pages}", callback_data=EmailSitePage(page=page))
+        if page < pages - 1:
+            nav.button(text="▶️", callback_data=EmailSitePage(page=page + 1))
+        b.attach(nav)
+    b.row(InlineKeyboardButton(text="⬅️ Back", callback_data=Nav(to="main").pack()))
+    return b.as_markup()
+
+
+def email_domains_keyboard(site: str, domains: list[dict], page: int) -> InlineKeyboardMarkup:
+    """domains: [{name, cost(sell Decimal), count}]. Each row -> confirm screen."""
+    b = InlineKeyboardBuilder()
+    per = 40
+    pages = max(1, math.ceil(len(domains) / per))
+    page = max(0, min(page, pages - 1))
+    for d in domains[page * per:(page + 1) * per]:
+        b.button(
+            text=f"{short(str(d['name']), 20)} • {money(d['sell'])}",
+            callback_data=EmailDomain(site=site, domain=str(d["name"])),
+        )
+    b.adjust(1)
+    if pages > 1:
+        nav = InlineKeyboardBuilder()
+        if page > 0:
+            nav.button(text="◀️", callback_data=EmailDomPage(site=site, page=page - 1))
+        nav.button(text=f"{page + 1}/{pages}", callback_data=EmailDomPage(site=site, page=page))
+        if page < pages - 1:
+            nav.button(text="▶️", callback_data=EmailDomPage(site=site, page=page + 1))
+        b.attach(nav)
+    b.row(InlineKeyboardButton(text="⬅️ Back", callback_data=Nav(to="emails").pack()))
+    return b.as_markup()
+
+
+def email_confirm_keyboard(site: str, domain: str, *, can_afford: bool) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if can_afford:
+        b.button(text="✅ Buy email", callback_data=EmailBuy(site=site, domain=domain))
+    else:
+        b.button(text="➕ Top up", callback_data=TopupPick(amount="menu"))
+    b.button(text="⬅️ Back", callback_data=EmailSite(code=site, page=0))
+    b.adjust(1)
+    return b.as_markup()
+
+
+def email_order_keyboard(order: Order) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if order.status == Order.WAITING:
+        b.button(text="❌ Cancel (no charge)", callback_data=EmailAct(action="cancel", id=order.id))
+        b.adjust(1)
+    elif order.status == Order.RECEIVED:
+        b.button(text=f"🔁 Another email ({money(order.price)})",
+                 callback_data=EmailAct(action="another", id=order.id))
+        b.button(text="✅ Done", callback_data=EmailAct(action="done", id=order.id))
         b.adjust(2)
     b.row(InlineKeyboardButton(text="🧾 My orders", callback_data=Nav(to="orders").pack()))
     return b.as_markup()

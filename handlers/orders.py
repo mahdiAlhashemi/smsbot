@@ -53,6 +53,10 @@ async def list_orders(call: CallbackQuery) -> None:
             from keyboards.menus import esim_order_keyboard
             from services.esim import format_esim_card
             sent = await call.message.answer(format_esim_card(o), reply_markup=esim_order_keyboard(o))
+        elif o.kind == "email":
+            from keyboards.menus import email_order_keyboard
+            from services.emails import format_email_card
+            sent = await call.message.answer(format_email_card(o), reply_markup=email_order_keyboard(o))
         else:
             sent = await call.message.answer(format_order(o), reply_markup=order_keyboard(o))
         # Point the live card at this newest message so the poller updates it.
