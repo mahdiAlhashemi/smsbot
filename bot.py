@@ -21,6 +21,7 @@ from services.context import AppContext, set_ctx
 from services.esim import EsimCatalog
 from services.payments import CryptoPay, OxaPay
 from services.pollers import start_pollers
+from services.webhook import start_webhook_server
 
 log = logging.getLogger(__name__)
 
@@ -152,12 +153,17 @@ async def main() -> None:
     # run in the background (bounded timeouts) so a slow/down provider can't stall
     # the bot from coming online.
     tasks = start_pollers()
+    # OxaPay instant-credit webhook (localhost; nginx proxies hooks.numberhub.io).
+    # Stays optional — when no callback URL is set, the payment poller alone runs.
+    webhook_runner = await start_webhook_server()
     asyncio.create_task(_startup_checks(hero, payments, esim))
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         for t in tasks:
             t.cancel()
+        if webhook_runner is not None:
+            await webhook_runner.cleanup()
         await hero.close()
         if payments is not None:
             await payments.close()

@@ -82,7 +82,9 @@ class CryptoPay:
     async def verify(self) -> None:
         await self.get_me()
 
-    async def make_invoice(self, amount, order_id: str) -> dict:
+    async def make_invoice(self, amount, order_id: str, callback: str | None = None) -> dict:
+        # `callback` is part of the shared interface (OxaPay uses it for webhooks);
+        # CryptoBot delivers via its own paid-button flow, so we just ignore it.
         inv = await self.create_invoice(
             amount=amount, asset=self._asset,
             description=f"Top up {order_id}", payload=order_id,

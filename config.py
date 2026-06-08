@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     # dashboard → your Merchant (payment gateway) → API key.
     oxapay_api_key: str = ""
     oxapay_asset: str = "USDT"
+    # Public URL OxaPay POSTs payment callbacks to (instant crediting). When set,
+    # the bot starts a localhost webhook listener and includes this URL on every
+    # invoice. Leave empty to rely on polling only.
+    # e.g. https://hooks.numberhub.io/oxapay
+    oxapay_callback_url: str = ""
+
+    # Webhook listener (bound to localhost; nginx terminates TLS and proxies in).
+    webhook_host: str = "127.0.0.1"
+    webhook_port: int = 8088
+    webhook_path: str = "/oxapay"
 
     # Crypto payments — Crypto Pay / @CryptoBot (alternative provider)
     cryptobot_token: str = ""

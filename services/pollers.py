@@ -297,12 +297,11 @@ async def _poll_payments_once(bot: Bot, provider) -> None:
             log.warning("payment %s status check failed: %s", payment.id, exc)
             continue
         if status == "paid":
-            if await repo.mark_payment_paid(payment.id):
-                # Invoices are amount-locked (currency=USD, to_currency=USDT), so
-                # the requested amount is what the customer paid. Apply bonuses +
-                # referral payout via the single credit path.
-                from services import billing
-                new_bal, bonus = await billing.credit_topup(payment.user_id, payment.amount)
+            # The webhook may have credited this already; settle_payment is atomic
+            # and idempotent, so only the first caller credits + we notify once.
+            from services import billing
+            credited, _p, new_bal, bonus = await billing.settle_payment(payment.id)
+            if credited:
                 bonus_line = f"\n🎁 Bonus: <b>+{money(bonus)}</b>" if bonus > 0 else ""
                 await _notify(
                     bot,

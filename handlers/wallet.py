@@ -114,7 +114,12 @@ async def _create_invoice(message: Message, user_id: int, amount: Decimal, edit_
         user_id=user_id, provider=provider.name, invoice_id="", amount=amount, asset="crypto",
     )
     try:
-        inv = await provider.make_invoice(amount, order_id=f"nh{payment.id}")
+        # callback_url enables OxaPay's instant webhook crediting (ignored by
+        # providers that don't use it); the payment poller is the fallback.
+        inv = await provider.make_invoice(
+            amount, order_id=f"nh{payment.id}",
+            callback=settings.oxapay_callback_url or None,
+        )
     except Exception as exc:  # noqa: BLE001
         log.warning("create invoice (%s) failed: %s", provider.name, exc)
         await repo.expire_payment(payment.id)
@@ -163,9 +168,9 @@ async def check_payment(call: CallbackQuery, callback_data: PayCheck) -> None:
         await call.answer("⚠️ Couldn't check right now — try again.", show_alert=True)
         return
     if status == "paid":
-        if await repo.mark_payment_paid(payment.id):
-            from services import billing
-            new_bal, bonus = await billing.credit_topup(payment.user_id, payment.amount)
+        from services import billing
+        credited, _p, new_bal, bonus = await billing.settle_payment(payment.id)
+        if credited:
             bonus_line = f"\n🎁 Bonus: <b>+{money(bonus)}</b>" if bonus > 0 else ""
             await safe_edit(
                 call,

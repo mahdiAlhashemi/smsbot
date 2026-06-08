@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import logging
 from decimal import ROUND_DOWN, Decimal
+from typing import TYPE_CHECKING
 
 from config import settings
 from db import repo
+
+if TYPE_CHECKING:
+    from db.models import Payment
 
 log = logging.getLogger(__name__)
 _CENT = Decimal("0.01")
@@ -75,3 +79,20 @@ async def credit_topup(user_id: int, amount: Decimal) -> tuple[Decimal, Decimal]
     except Exception:  # noqa: BLE001 — never let referral logic break a real credit
         log.exception("referral payout failed for user %s", user_id)
     return new_bal, bonus
+
+
+async def settle_payment(payment_id: int) -> tuple[bool, "Payment | None", Decimal, Decimal]:
+    """Atomically mark a pending payment PAID and credit it. Idempotent: the
+    atomic `mark_payment_paid` wins exactly once, so concurrent callers (webhook
+    + payment poller + the 'I have paid' button) credit a top-up only once.
+
+    Returns (credited_now, payment, new_balance, bonus). `credited_now` is True
+    only on the first settlement, so the caller can notify the user exactly once.
+    """
+    payment = await repo.get_payment(payment_id)
+    if payment is None:
+        return False, None, Decimal("0"), Decimal("0")
+    if not await repo.mark_payment_paid(payment_id):
+        return False, payment, Decimal("0"), Decimal("0")  # already credited elsewhere
+    new_bal, bonus = await credit_topup(payment.user_id, payment.amount)
+    return True, payment, new_bal, bonus

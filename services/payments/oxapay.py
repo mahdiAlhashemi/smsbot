@@ -13,6 +13,8 @@ Unified provider interface (shared with CryptoPay):
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 from decimal import Decimal
 
@@ -95,9 +97,27 @@ class OxaPay:
             r = self._unwrap(resp)
         except OxaPayError:
             return "pending"  # transient provider/network error — retry next cycle
-        status = str(r.get("status", "")).lower()
-        if status in _PAID:
+        return self.normalize_status(r.get("status", ""))
+
+    @staticmethod
+    def normalize_status(raw_status) -> str:
+        """Map an OxaPay status (e.g. 'Paid'/'Paying'/'Expired') to our normalized
+        'paid' | 'pending' | 'expired'. Used by both polling and the webhook so the
+        two crediting paths agree on what 'settled' means."""
+        s = str(raw_status or "").lower()
+        if s in _PAID:
             return "paid"
-        if status in _FAILED:
+        if s in _FAILED:
             return "expired"
         return "pending"
+
+    @staticmethod
+    def verify_callback(raw_body: bytes, signature: str, api_key: str) -> bool:
+        """Verify an OxaPay webhook. OxaPay signs the EXACT raw POST bytes with
+        HMAC-SHA512 keyed by the merchant API key and sends the hex digest in the
+        `HMAC` header. Constant-time compare; reject on any missing piece — an
+        unverified callback could otherwise mint free credit."""
+        if not signature or not api_key or not raw_body:
+            return False
+        expected = hmac.new(api_key.encode(), raw_body, hashlib.sha512).hexdigest()
+        return hmac.compare_digest(expected, signature.strip())
