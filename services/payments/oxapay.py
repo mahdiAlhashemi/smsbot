@@ -62,11 +62,12 @@ class OxaPay:
 
     async def _create_invoice(self, amount, order_id: str, *, sandbox: bool = False,
                               callback: str | None = None) -> dict:
-        # Price fixed in USD; settle in USDT so the merchant balance stays in one coin.
+        # Price fixed in USD. We do NOT pin to_currency, so the payer can pay in
+        # ANY accepted coin; the merchant's "Auto-Convert to USDT" setting settles
+        # the balance in USDT. (The bot credits the fixed USD amount regardless.)
         body = {
             "amount": float(Decimal(str(amount))),
             "currency": "USD",
-            "to_currency": self._asset,
             "lifetime": 60,                # minutes (15–2880)
             "fee_paid_by_payer": 1,        # payer covers the network fee
             "order_id": order_id,
