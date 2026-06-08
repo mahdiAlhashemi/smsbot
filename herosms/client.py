@@ -95,12 +95,21 @@ class HeroSMSClient:
             await self._client.aclose()
 
     # ── low level ───────────────────────────────────────────────────────────
-    async def _raw(self, action: str, **params) -> str:
+    async def _raw(self, action: str, method: str = "GET", **params) -> str:
+        """Transport for the legacy ``?api_key=&action=`` endpoint.
+
+        ``method`` defaults to ``"GET"``; pass ``"POST"`` for the few actions
+        the spec declares as POST (reactivate / prolong). Params stay in the
+        query string either way (the spec marks them ``in=query``).
+        """
         query = {"api_key": self._api_key, "action": action}
         for k, v in params.items():
             if v is not None:
                 query[k] = v
-        resp = await self._client.get(self._base_url, params=query)
+        if str(method).upper() == "POST":
+            resp = await self._client.post(self._base_url, params=query)
+        else:
+            resp = await self._client.get(self._base_url, params=query)
         text = resp.text.strip()
         log.debug("HeroSMS %s -> %s", action, text[:300])
         self._raise_for_error(text, resp.status_code)
@@ -142,6 +151,53 @@ class HeroSMSClient:
     @staticmethod
     def _json(text: str):
         return json.loads(text)
+
+    @staticmethod
+    def _to_dict(text: str) -> dict:
+        """Parse a JSON response to a dict, tolerantly.
+
+        A JSON array is wrapped as ``{"data": [...]}`` so the caller always
+        gets a dict; anything unparseable (plaintext sentinel like
+        ``OPERATORS_NOT_FOUND``, junk, empty) yields ``{}``.
+        """
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list):
+            return {"data": data}
+        return {}
+
+    @staticmethod
+    def _parse_activation(text: str) -> "Activation":
+        """Parse a getNumberV2-shaped JSON body into an Activation.
+
+        Used by reactivate / prolong (their success bodies mirror getNumberV2).
+        Tolerates a ``{"data": {...}}`` envelope. Raises on a missing id/phone.
+        """
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            raise HeroSMSError("UNEXPECTED_RESPONSE", str(text)[:200])
+        if isinstance(data, dict) and isinstance(data.get("data"), dict):
+            data = data["data"]
+        if not isinstance(data, dict):
+            raise HeroSMSError("UNEXPECTED_RESPONSE", str(data)[:200])
+        act_id = data.get("activationId") or data.get("id")
+        phone = data.get("phoneNumber") or data.get("phone")
+        if not act_id or not phone:
+            raise HeroSMSError("UNEXPECTED_RESPONSE", str(data)[:200])
+        country = data.get("countryCode")
+        return Activation(
+            id=str(act_id),
+            phone=str(phone),
+            cost=_to_decimal(data.get("activationCost", 0)),
+            country=str(country) if country is not None else None,
+            operator=data.get("activationOperator"),
+            can_get_another=bool(data.get("canGetAnotherSms", False)),
+        )
 
     # ── account ─────────────────────────────────────────────────────────────
     async def get_balance(self) -> Decimal:
@@ -226,6 +282,39 @@ class HeroSMSClient:
         # Really-in-stock countries first (physicalCount > 0), then by price.
         out.sort(key=lambda x: (x["count"] == 0, x["cost"]))
         return out
+
+    async def get_operators(self, country: str | None = None) -> dict:
+        """getOperators -> {status, countryOperators:{country_id:[operator,...]}}.
+
+        Returns ``{}`` when the provider replies ``OPERATORS_NOT_FOUND`` (not an
+        error token) or otherwise has nothing to report.
+        """
+        text = await self._raw("getOperators", country=country)
+        return self._to_dict(text)
+
+    async def get_top_countries_by_service(
+        self, service: str, free_price: bool | None = None
+    ) -> dict:
+        """getTopCountriesByService (deprecated upstream) -> raw top-countries map."""
+        free = None if free_price is None else ("true" if free_price else "false")
+        text = await self._raw("getTopCountriesByService", service=service, freePrice=free)
+        return self._to_dict(text)
+
+    async def get_top_countries_by_service_rank(self, service: str) -> dict:
+        """getTopCountriesByServiceRank (deprecated upstream) -> rank-adjusted map."""
+        text = await self._raw("getTopCountriesByServiceRank", service=service)
+        return self._to_dict(text)
+
+    async def service_count_rent(
+        self, service: str, country: str | None = None
+    ) -> dict:
+        """serviceCountRent -> {country_id: {duration: {count, price}}} for rent.
+
+        ``service`` is required by the spec. Returns ``{}`` when the provider
+        replies with an empty body (``{}``).
+        """
+        text = await self._raw("serviceCountRent", service=service, country=country)
+        return self._to_dict(text)
 
     # ── activations ─────────────────────────────────────────────────────────
     async def get_number(
@@ -329,6 +418,77 @@ class HeroSMSClient:
     async def request_another_code(self, activation_id: str) -> None:
         await self.set_status(activation_id, 3)
 
+    async def get_status_v2(self, activation_id: str) -> dict:
+        """getStatusV2 -> structured status.
+
+        Returns ``{verificationType, sms:{dateTime,code,text}, call:{...}}`` for
+        the JSON form. A plaintext status (``STATUS_CANCEL``, ``STATUS_WAIT_CODE``,
+        …) maps to ``{"status": "<TOKEN>"}``; unparseable to ``{"status": "UNKNOWN"}``.
+        """
+        text = await self._raw("getStatusV2", id=activation_id)
+        upper = text.upper()
+        if upper.startswith("STATUS_"):
+            return {"status": upper.split(":", 1)[0].replace("STATUS_", "", 1)}
+        data = self._to_dict(text)
+        if not data:
+            return {"status": "UNKNOWN"}
+        sms = data.get("sms") if isinstance(data.get("sms"), dict) else {}
+        call = data.get("call") if isinstance(data.get("call"), dict) else {}
+        return {
+            "verificationType": data.get("verificationType"),
+            "sms": {
+                "dateTime": sms.get("dateTime"),
+                "code": sms.get("code"),
+                "text": sms.get("text"),
+            },
+            "call": call,
+        }
+
+    async def get_all_sms(self, activation_id: str, page: int = 1, size: int = 20) -> list[dict]:
+        """getAllSms -> the ``data`` array of SMS dicts for one activation.
+
+        Empty list when there are no messages or the body can't be parsed.
+        """
+        text = await self._raw("getAllSms", id=activation_id, page=page, size=size)
+        data = self._to_dict(text).get("data")
+        return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+    async def get_active_activations(self, start: int = 0, limit: int = 10) -> list[dict]:
+        """getActiveActivations -> the ``data`` array of currently-open activations.
+
+        ``NO_ACTIVATIONS`` (the provider's empty sentinel) is mapped to an empty
+        list rather than an error.
+        """
+        try:
+            text = await self._raw("getActiveActivations", start=start, limit=limit)
+        except HeroSMSError as exc:
+            if exc.code in ("NO_ACTIVATIONS", "NO_ACTIVATION"):
+                return []
+            raise
+        data = self._to_dict(text).get("data")
+        return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+    async def finish_activation(self, activation_id: str) -> str:
+        """finishActivation -> raw provider response (e.g. ``ACCESS_ACTIVATION``)."""
+        return await self._raw("finishActivation", id=activation_id)
+
+    async def cancel_activation(self, activation_id: str) -> str:
+        """cancelActivation -> raw provider response (e.g. ``ACCESS_CANCEL``)."""
+        return await self._raw("cancelActivation", id=activation_id)
+
+    async def reactivate(self, activation_id: str, duration: int | None = None) -> Activation:
+        """reactivate (POST) -> a fresh Activation reusing a previously-used number.
+
+        ``duration`` (hours) is optional and only relevant for rent-type numbers.
+        """
+        text = await self._raw("reactivate", method="POST", id=activation_id, duration=duration)
+        return self._parse_activation(text)
+
+    async def reactivate_options(self, activation_id: str) -> dict:
+        """reactivateOptions -> ``{"data": {"options": [...]}}`` reactivation costs."""
+        text = await self._raw("reactivateOptions", id=activation_id)
+        return self._to_dict(text)
+
     # ── rentals (api/v1-style "duration" in hours; min 24) ───────────────────
     async def rent_services(self, duration: int, country: str) -> dict:
         """getRentServicesAndCountries -> {services:{code:{price,quantity}}, countries, operators}."""
@@ -367,8 +527,12 @@ class HeroSMSClient:
         return RentActivation(
             id=str(rent_id),
             phone=str(number),
-            end_date=str(phone.get("endDate") or phone.get("end_date") or ""),
-            cost=_to_decimal(phone.get("cost", 0)),
+            # HeroSMS returns either legacy ``endDate``/``cost`` or the v1 flat
+            # ``activationEndTime``/``activationCost`` — read both so the rental's
+            # real end time and price aren't silently lost (cost was parsing to 0).
+            end_date=str(phone.get("endDate") or phone.get("end_date")
+                         or phone.get("activationEndTime") or ""),
+            cost=_to_decimal(phone.get("cost") or phone.get("activationCost") or 0),
         )
 
     async def rent_status(self, rent_id: str) -> list[dict]:
@@ -394,6 +558,46 @@ class HeroSMSClient:
     async def set_rent_status(self, rent_id: str, status: int) -> str:
         """status: 1 = finish, 2 = cancel."""
         return await self._raw("setRentStatus", id=rent_id, status=status)
+
+    async def prolong(self, activation_id: str, duration: int) -> Activation:
+        """prolong (POST) -> extend a Rent-type number's session by ``duration`` hours.
+
+        Returns the (same-number) Activation; raises if the body is unusable.
+        """
+        text = await self._raw("prolong", method="POST", id=activation_id, duration=duration)
+        return self._parse_activation(text)
+
+    async def prolong_options(self, activation_id: str) -> dict:
+        """prolongOptions -> ``{"data": {"options": [...]}}`` extension costs."""
+        text = await self._raw("prolongOptions", id=activation_id)
+        return self._to_dict(text)
+
+    async def prolong_history(self, activation_id: str) -> dict:
+        """prolongHistory -> ``{"data": [{userPrice,hours,createDate,payerType},...]}``."""
+        text = await self._raw("prolongHistory", id=activation_id)
+        return self._to_dict(text)
+
+    # ── history ──────────────────────────────────────────────────────────────
+    async def get_history(
+        self,
+        start: int | None = None,
+        end: int | None = None,
+        offset: int = 0,
+        size: int = 10,
+    ) -> list[dict]:
+        """getHistory -> list of past activations [{id,date,phone,sms,cost,status,...}].
+
+        ``start``/``end`` are optional Unix timestamps bounding the period.
+        Returns an empty list if the body is empty or can't be parsed.
+        """
+        text = await self._raw("getHistory", start=start, end=end, offset=offset, size=size)
+        try:
+            data = self._json(text)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(data, dict):  # tolerate a {"data": [...]} envelope
+            data = data.get("data", [])
+        return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
 
 
 @dataclass

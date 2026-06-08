@@ -157,6 +157,81 @@ async def test_catalog_parsing():
     check("out-of-stock last", prices[1]["country"] == "6")
 
 
+async def test_new_actions():
+    print("[new legacy actions]")
+    # getStatusV2 — JSON form
+    c = _client_returning({"getStatusV2": '{"verificationType":2,"sms":{"dateTime":"2026-01-01 00:00:00","code":"4321","text":"code 4321"},"call":{}}'})
+    sv2 = await c.get_status_v2("1")
+    check("statusV2 code", sv2["sms"]["code"] == "4321" and sv2["verificationType"] == 2)
+    # getStatusV2 — plaintext form
+    c = _client_returning({"getStatusV2": "STATUS_CANCEL"})
+    check("statusV2 plaintext", (await c.get_status_v2("1")) == {"status": "CANCEL"})
+
+    # getAllSms — list under data
+    c = _client_returning({"getAllSms": '{"data":[{"id":"1","code":"111"},{"id":"2","code":"222"}],"meta":{}}'})
+    sms = await c.get_all_sms("1")
+    check("getAllSms count", len(sms) == 2 and sms[0]["code"] == "111")
+    c = _client_returning({"getAllSms": '{"data":[]}'})
+    check("getAllSms empty", (await c.get_all_sms("1")) == [])
+
+    # getActiveActivations — data array; NO_ACTIVATIONS -> []
+    c = _client_returning({"getActiveActivations": '{"status":"success","data":[{"activationId":"9","serviceCode":"tg"}]}'})
+    act = await c.get_active_activations()
+    check("activeActivations data", len(act) == 1 and act[0]["activationId"] == "9")
+
+    def _no_acts(_):
+        HeroSMSClient._raise_for_error("NO_ACTIVATIONS", 200)
+    c = _client_returning({"getActiveActivations": _no_acts})
+    check("activeActivations empty sentinel", (await c.get_active_activations()) == [])
+
+    # getHistory — top-level array
+    c = _client_returning({"getHistory": '[{"id":"5","phone":"79991234567","cost":0.4}]'})
+    hist = await c.get_history()
+    check("getHistory parsed", len(hist) == 1 and hist[0]["id"] == "5")
+
+    # reactivate (POST) -> Activation
+    c = _client_returning({"reactivate": '{"activationId":"42","phoneNumber":"79990000000","activationCost":1.5,"countryCode":6,"canGetAnotherSms":true}'})
+    ra = await c.reactivate("42")
+    check("reactivate id/phone", ra.id == "42" and ra.phone == "79990000000")
+    check("reactivate cost/another", ra.cost == Decimal("1.5") and ra.can_get_another is True)
+
+    # prolong (POST) -> Activation
+    c = _client_returning({"prolong": '{"activationId":"42","phoneNumber":"79990000000","activationCost":0.5}'})
+    pr = await c.prolong("42", 24)
+    check("prolong parsed", pr.id == "42" and pr.cost == Decimal("0.5"))
+
+    # malformed reactivate body must raise (no silent None)
+    c = _client_returning({"reactivate": '{"status":"error"}'})
+    raised = None
+    try:
+        await c.reactivate("42")
+    except HeroSMSError as e:
+        raised = e.code
+    check("reactivate malformed raises", raised == "UNEXPECTED_RESPONSE")
+
+    # options/history dicts + operators
+    c = _client_returning({"reactivateOptions": '{"data":{"options":[{"hours":4,"price":0.4}]}}'})
+    check("reactivateOptions dict", isinstance(await c.reactivate_options("1"), dict))
+    c = _client_returning({"prolongHistory": '{"data":[{"userPrice":0.46,"hours":24}]}'})
+    ph = await c.prolong_history("1")
+    check("prolongHistory dict", ph.get("data")[0]["hours"] == 24)
+    c = _client_returning({"getOperators": '{"status":"success","countryOperators":{"175":["optus","vodafone"]}}'})
+    ops = await c.get_operators()
+    check("getOperators dict", ops["countryOperators"]["175"][0] == "optus")
+    c = _client_returning({"getOperators": "OPERATORS_NOT_FOUND"})
+    check("getOperators not-found -> {}", (await c.get_operators()) == {})
+
+    # serviceCountRent + top-countries (list payload wrapped under data)
+    c = _client_returning({"serviceCountRent": '{"6":{"2":{"count":25370,"price":0.18}}}'})
+    scr = await c.service_count_rent(service="tg")
+    check("serviceCountRent dict", scr["6"]["2"]["count"] == 25370)
+    c = _client_returning({"serviceCountRent": "{}"})
+    check("serviceCountRent empty", (await c.service_count_rent(service="tg")) == {})
+    c = _client_returning({"getTopCountriesByService": '[{"ig":[{"country":6,"price":0.045}]}]'})
+    top = await c.get_top_countries_by_service("ig", free_price=True)
+    check("topCountries list wrapped", isinstance(top, dict) and isinstance(top.get("data"), list))
+
+
 def test_pricing():
     print("[pricing]")
     check("30% of 0.50", apply_markup(Decimal("0.50"), Decimal("30")) == Decimal("0.65"))
@@ -171,6 +246,7 @@ async def main():
     await test_status()
     await test_get_number()
     await test_catalog_parsing()
+    await test_new_actions()
     test_pricing()
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     return FAIL
