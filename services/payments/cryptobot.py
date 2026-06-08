@@ -78,7 +78,7 @@ class CryptoPay:
         result = await self._call("getInvoices", status=status, count=count)
         return result.get("items", [])
 
-    # ── unified provider interface (shared with Heleket) ────────────────────
+    # ── unified provider interface (shared with OxaPay) ─────────────────────
     async def verify(self) -> None:
         await self.get_me()
 

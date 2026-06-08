@@ -1,4 +1,4 @@
 from services.payments.cryptobot import CryptoPay, CryptoPayError
-from services.payments.heleket import Heleket, HeleketError
+from services.payments.oxapay import OxaPay, OxaPayError
 
-__all__ = ["CryptoPay", "CryptoPayError", "Heleket", "HeleketError"]
+__all__ = ["CryptoPay", "CryptoPayError", "OxaPay", "OxaPayError"]

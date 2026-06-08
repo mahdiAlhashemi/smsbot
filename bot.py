@@ -19,7 +19,7 @@ from herosms import HeroSMSClient
 from services.catalog import Catalog
 from services.context import AppContext, set_ctx
 from services.esim import EsimCatalog
-from services.payments import CryptoPay, Heleket
+from services.payments import CryptoPay, OxaPay
 from services.pollers import start_pollers
 
 log = logging.getLogger(__name__)
@@ -122,9 +122,9 @@ async def main() -> None:
 
     hero = HeroSMSClient(settings.herosms_api_key, settings.herosms_base_url)
     catalog = Catalog(hero)
-    # Pick the crypto payment provider: Heleket preferred, then CryptoBot.
-    if settings.heleket_enabled:
-        payments = Heleket(settings.heleket_merchant, settings.heleket_api_key)
+    # Pick the crypto payment provider: OxaPay preferred, then CryptoBot.
+    if settings.oxapay_enabled:
+        payments = OxaPay(settings.oxapay_api_key, settings.oxapay_asset)
     elif settings.cryptobot_token:
         payments = CryptoPay(settings.cryptobot_token, settings.cryptobot_testnet,
                              settings.cryptobot_asset)

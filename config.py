@@ -68,9 +68,10 @@ class Settings(BaseSettings):
     referral_bonus: Decimal = Decimal("0.5")
     referral_min_topup: Decimal = Decimal("5")
 
-    # Crypto payments — Heleket (formerly Cryptomus)
-    heleket_merchant: str = ""
-    heleket_api_key: str = ""
+    # Crypto payments — OxaPay (no-KYC). Merchant API key from the OxaPay
+    # dashboard → your Merchant (payment gateway) → API key.
+    oxapay_api_key: str = ""
+    oxapay_asset: str = "USDT"
 
     # Crypto payments — Crypto Pay / @CryptoBot (alternative provider)
     cryptobot_token: str = ""
@@ -96,12 +97,12 @@ class Settings(BaseSettings):
         return [int(x) for x in self.admin_ids.replace(" ", "").split(",") if x]
 
     @property
-    def heleket_enabled(self) -> bool:
-        return bool(self.heleket_merchant and self.heleket_api_key)
+    def oxapay_enabled(self) -> bool:
+        return bool(self.oxapay_api_key)
 
     @property
     def payments_enabled(self) -> bool:
-        return self.heleket_enabled or bool(self.cryptobot_token)
+        return self.oxapay_enabled or bool(self.cryptobot_token)
 
     @property
     def esim_enabled(self) -> bool:

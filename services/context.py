@@ -8,7 +8,7 @@ from aiogram import Bot
 from esim import EsimAccessClient
 from herosms import HeroSMSClient
 from services.catalog import Catalog
-from services.payments import CryptoPay, Heleket
+from services.payments import CryptoPay, OxaPay
 
 
 @dataclass
@@ -16,8 +16,8 @@ class AppContext:
     bot: Bot
     hero: HeroSMSClient
     catalog: Catalog
-    # Active crypto payment provider (Heleket or CryptoPay), or None if disabled.
-    payments: Heleket | CryptoPay | None
+    # Active crypto payment provider (OxaPay or CryptoPay), or None if disabled.
+    payments: OxaPay | CryptoPay | None
     # eSIM Access client, or None if eSIM credentials aren't configured.
     esim: EsimAccessClient | None = None
     # eSIM catalog cache (set in bot.py alongside `esim`).
