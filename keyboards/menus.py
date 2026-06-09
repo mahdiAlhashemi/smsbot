@@ -54,17 +54,20 @@ TOPUP_PRESETS = ["2", "5", "10", "20", "50", "100"]
 def main_menu(is_admin: bool, payments_enabled: bool, esim_enabled: bool = False,
               emails_enabled: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    # Products — at most 2 per row so every label shows in FULL. (Putting 3+ in
+    # one row, e.g. Rent · eSIM · Email, squashed and cut the text.)
     b.button(text="📲 Buy OTP number", callback_data=Nav(to="buy"))
     b.button(text="📱 Rent number", callback_data=Nav(to="rent"))
-    layout = [1]
-    product_row = 1
+    n = 2
     if esim_enabled:
         b.button(text="📡 eSIM data", callback_data=Nav(to="esim"))
-        product_row += 1
+        n += 1
     if emails_enabled:
         b.button(text="📧 Email OTP", callback_data=Nav(to="emails"))
-        product_row += 1
-    layout.append(product_row)    # Rent (+ eSIM / Email) share a row
+        n += 1
+    layout = [2] * (n // 2)
+    if n % 2:
+        layout.append(1)
     b.button(text="👛 Wallet", callback_data=Nav(to="wallet"))
     b.button(text="🧾 My orders", callback_data=Nav(to="orders"))
     b.button(text="👤 Account", callback_data=Nav(to="account"))
