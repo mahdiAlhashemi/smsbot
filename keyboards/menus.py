@@ -90,10 +90,10 @@ def services_keyboard(services: list[dict], page: int) -> InlineKeyboardMarkup:
     chunk = services[page * SERVICES_PER_PAGE : (page + 1) * SERVICES_PER_PAGE]
     for svc in chunk:
         b.button(
-            text=f"{short(svc['name'], 26)}",
+            text=short(svc["name"], 40),
             callback_data=SvcPick(code=svc["code"]),
         )
-    b.adjust(2)
+    b.adjust(1)  # one per row so long service names show in full
 
     nav = InlineKeyboardBuilder()
     if page > 0:
@@ -123,7 +123,7 @@ def countries_keyboard(
     chunk = items[page * COUNTRIES_PER_PAGE : (page + 1) * COUNTRIES_PER_PAGE]
     for it in chunk:
         cid = it["country"]
-        name = short(names.get(cid, f"#{cid}"), 16)
+        name = short(names.get(cid, f"#{cid}"), 30)
         # ⏳ marks countries with no real stock right now (will be queued).
         mark = "" if it.get("count", 0) > 0 else "⏳ "
         rate = it.get("rate")
@@ -236,9 +236,9 @@ def rent_countries_keyboard(h: int, country_ids: list, names: dict, page: int) -
     page = max(0, min(page, pages - 1))
     for cid in country_ids[page * per:(page + 1) * per]:
         cid = str(cid)
-        name = short(names.get(cid, f"#{cid}"), 22)
+        name = short(names.get(cid, f"#{cid}"), 28)
         b.button(text=f"{flag(cid)} {name}", callback_data=RentCty(h=h, country=cid))
-    b.adjust(2)
+    b.adjust(1)  # one per row so country names show in full
     nav = InlineKeyboardBuilder()
     if page > 0:
         nav.button(text="◀️", callback_data=RentCtyPage(h=h, page=page - 1))
@@ -260,7 +260,7 @@ def rent_services_keyboard(h: int, country: str, items: list, names: dict, page:
     page = max(0, min(page, pages - 1))
     for it in items[page * per:(page + 1) * per]:
         code = it["code"]
-        name = short(names.get(code, code.upper()), 22)
+        name = short(names.get(code, code.upper()), 32)
         b.button(text=f"{name} • {money(it['sell'])}", callback_data=RentConf(h=h, country=country, code=code))
     b.adjust(1)
     nav = InlineKeyboardBuilder()
@@ -334,7 +334,7 @@ def rent_extend_confirm_keyboard(order_id: int, h: int) -> InlineKeyboardMarkup:
 
 
 def esim_regions_keyboard(regions: list[dict], page: int) -> InlineKeyboardMarkup:
-    """regions: ordered list of {code, name}. Paginated, 2 per row."""
+    """regions: ordered list of {code, name}. Paginated, one per row (full names)."""
     from country_flags import iso_flag
 
     b = InlineKeyboardBuilder()
@@ -343,9 +343,9 @@ def esim_regions_keyboard(regions: list[dict], page: int) -> InlineKeyboardMarku
     page = max(0, min(page, pages - 1))
     for r in regions[page * per:(page + 1) * per]:
         code = str(r.get("code", ""))
-        name = short(str(r.get("name", code)), 20)
+        name = short(str(r.get("name", code)), 30)
         b.button(text=f"{iso_flag(code)} {name}", callback_data=EsimReg(code=code, page=0))
-    b.adjust(2)
+    b.adjust(1)
     nav = InlineKeyboardBuilder()
     if page > 0:
         nav.button(text="◀️", callback_data=EsimRegPage(page=page - 1))
@@ -428,9 +428,9 @@ def email_sites_keyboard(sites: list[dict], page: int) -> InlineKeyboardMarkup:
     pages = max(1, math.ceil(len(sites) / per))
     page = max(0, min(page, pages - 1))
     for s in sites[page * per:(page + 1) * per]:
-        b.button(text=short(str(s.get("name", s.get("site"))), 22),
+        b.button(text=short(str(s.get("name", s.get("site"))), 30),
                  callback_data=EmailSite(code=str(s["site"]), page=0))
-    b.adjust(2)
+    b.adjust(1)
     if pages > 1:
         nav = InlineKeyboardBuilder()
         if page > 0:
@@ -451,7 +451,7 @@ def email_domains_keyboard(site: str, domains: list[dict], page: int) -> InlineK
     page = max(0, min(page, pages - 1))
     for d in domains[page * per:(page + 1) * per]:
         b.button(
-            text=f"{short(str(d['name']), 20)} • {money(d['sell'])}",
+            text=f"{short(str(d['name']), 28)} • {money(d['sell'])}",
             callback_data=EmailDomain(site=site, domain=str(d["name"])),
         )
     b.adjust(1)
