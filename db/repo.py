@@ -305,6 +305,22 @@ async def get_open_orders() -> list[Order]:
         return list(result.scalars().all())
 
 
+async def get_order_by_activation(activation_id: str) -> Order | None:
+    """The OPEN SMS order currently using this HeroSMS activation id — for the
+    inbound webhook to deliver against. Most-recent open match wins."""
+    async with session_factory() as s:
+        result = await s.execute(
+            select(Order)
+            .where(
+                Order.activation_id == str(activation_id),
+                Order.kind == "sms",
+                Order.status.in_([Order.WAITING, Order.RECEIVED]),
+            )
+            .order_by(Order.id.desc())
+        )
+        return result.scalars().first()
+
+
 async def get_open_rent_orders() -> list[Order]:
     """Active rentals (the rent poller uses getRentStatus on these)."""
     async with session_factory() as s:

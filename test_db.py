@@ -612,6 +612,34 @@ async def main():
     stuck = await repo.get_stuck_transient_orders()
     check("self-heal query finds stuck transient", any(o.id == su.id for o in stuck))
 
+    print("[herosms webhook helpers]")
+    import json as _j
+    from services.webhook import _herosms_activation_id
+
+    class _FakeReq:
+        def __init__(self, q=None):
+            self.query = q or {}
+
+    check("webhook id from JSON body",
+          _herosms_activation_id(_j.dumps({"activationId": 777}).encode(), _FakeReq()) == "777")
+    check("webhook id from query string",
+          _herosms_activation_id(b"", _FakeReq({"id": "888"})) == "888")
+    check("webhook id from form body",
+          _herosms_activation_id(b"activation_id=999&x=1", _FakeReq()) == "999")
+    check("webhook id none on garbage",
+          _herosms_activation_id(b"not-an-id", _FakeReq()) is None)
+
+    _wexp = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=20)
+    await repo.get_or_create_user(700, None, None, False)
+    wo = await repo.create_order(
+        user_id=700, kind="sms", activation_id="WH123", service="zz", service_name="ZZ",
+        country="99", country_name="N", phone="7", cost=Decimal("0.05"), price=Decimal("0.06"),
+        status=Order.WAITING, expires_at=_wexp,
+    )
+    found = await repo.get_order_by_activation("WH123")
+    check("get_order_by_activation finds open sms order", found is not None and found.id == wo.id)
+    check("get_order_by_activation None for unknown", await repo.get_order_by_activation("NOPE") is None)
+
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     # cleanup
     from db import engine

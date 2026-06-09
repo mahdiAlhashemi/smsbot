@@ -323,13 +323,20 @@ class HeroSMSClient:
         country: str,
         max_price: Decimal | None = None,
         operator: str | None = None,
+        url: str | None = None,
     ) -> Activation:
-        """Order a number. Uses getNumberV2 (JSON, includes the exact cost)."""
+        """Order a number. Uses getNumberV2 (JSON, includes the exact cost).
+
+        ``url`` registers a webhook: HeroSMS POSTs to it when an SMS arrives, so
+        the bot delivers the code instantly instead of waiting for the next poll.
+        """
         params = {"service": service, "country": country}
         if max_price is not None:
             params["maxPrice"] = str(max_price)
         if operator:
             params["operator"] = operator
+        if url:
+            params["url"] = url
         # Try getNumberV2. We fall back to legacy getNumber ONLY when V2 is
         # genuinely unavailable on this endpoint (HTTP/route error or non-JSON).
         # A V2 call that returns a parsed JSON body is AUTHORITATIVE — we return

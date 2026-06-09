@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     webhook_port: int = 8088
     webhook_path: str = "/oxapay"
 
+    # HeroSMS inbound webhook (instant code delivery): when set, the bot registers
+    # this URL on every getNumber so HeroSMS POSTs us the moment an SMS arrives.
+    # Only POSTs from herosms_webhook_ips are accepted; the 5s poller stays as the
+    # fallback. e.g. https://hooks.numberhub.io/herosms
+    herosms_webhook_url: str = ""
+    herosms_webhook_path: str = "/herosms"
+    # Comma-separated HeroSMS sender IPs allowed to POST the webhook (whitelist).
+    herosms_webhook_ips: str = "84.32.223.53,185.138.88.87"
+
     # Crypto payments — Crypto Pay / @CryptoBot (alternative provider)
     cryptobot_token: str = ""
     cryptobot_testnet: bool = False
@@ -132,6 +141,10 @@ class Settings(BaseSettings):
     def herosms_v1_key(self) -> str:
         """v1 REST token — falls back to the legacy api_key (same account)."""
         return self.herosms_v1_token or self.herosms_api_key
+
+    @property
+    def herosms_webhook_ip_list(self) -> set[str]:
+        return {ip.strip() for ip in self.herosms_webhook_ips.split(",") if ip.strip()}
 
     @property
     def support_url(self) -> str:

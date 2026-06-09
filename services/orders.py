@@ -170,7 +170,7 @@ async def purchase(
     #    Release the hold on any failure.
     max_price = await pricing.buy_ceiling(cost_hint)
     try:
-        activation = await hero.get_number(service, country, max_price=max_price)
+        activation = await hero.get_number(service, country, max_price=max_price, url=settings.herosms_webhook_url or None)
     except NoNumbersError:
         # No stock right now -> QUEUE the order and keep retrying in the
         # background. The hold stays; the customer is told it's processing.
@@ -314,7 +314,7 @@ async def replace_number(order: Order, hero: HeroSMSClient, catalog: Catalog) ->
     # 1) Get the replacement number FIRST so the hold always has an owner.
     new_activation = None
     try:
-        new_activation = await hero.get_number(service, country, max_price=max_price)
+        new_activation = await hero.get_number(service, country, max_price=max_price, url=settings.herosms_webhook_url or None)
     except NoNumbersError:
         new_activation = None  # none free -> we'll queue the replacement
     except HeroSMSError as exc:
@@ -404,7 +404,7 @@ async def try_fulfill_pending(order: Order, hero: HeroSMSClient) -> bool:
     number was obtained and the order is now WAITING."""
     max_price = await pricing.buy_ceiling(order.cost) if order.cost > 0 else None
     try:
-        activation = await hero.get_number(order.service, order.country, max_price=max_price)
+        activation = await hero.get_number(order.service, order.country, max_price=max_price, url=settings.herosms_webhook_url or None)
     except (NoNumbersError, HeroSMSError):
         return False
     except Exception:  # noqa: BLE001 — network etc.
