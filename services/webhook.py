@@ -55,6 +55,13 @@ async def _handle_oxapay(request: web.Request) -> web.Response:
     status = OxaPay.normalize_status(data.get("status", ""))
     pid = _payment_id_from_order(order_id)
     log.info("oxapay webhook: order=%s raw_status=%s -> %s", order_id, data.get("status"), status)
+    # DIAGNOSTIC: log the full body so we can see exactly what OxaPay reports for
+    # invoice vs paid vs received amounts (to decide if overpayments should credit
+    # the actual settled amount instead of the invoice amount).
+    try:
+        log.info("oxapay webhook body: %s", json.dumps(data)[:800])
+    except Exception:  # noqa: BLE001
+        pass
 
     if status == "paid" and pid is not None:
         try:
