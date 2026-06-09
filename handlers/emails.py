@@ -62,7 +62,7 @@ async def page_sites(call: CallbackQuery, callback_data: EmailSitePage) -> None:
 async def _priced_domains(site: str) -> list[dict]:
     domains = await _cat().domains_for(site)
     for d in domains:
-        d["sell"] = await pricing.commission_price(d["cost"])
+        d["sell"] = await pricing.email_sell_price(d["cost"])
     return domains
 
 
@@ -115,7 +115,7 @@ async def confirm_email(call: CallbackQuery, callback_data: EmailDomain) -> None
     if dom is None:
         await safe_edit(call, "😔 That domain just changed. Pick another.", back_button("emails"))
         return
-    price = await pricing.commission_price(dom["cost"])
+    price = await pricing.email_sell_price(dom["cost"])
     user = await repo.get_user(call.from_user.id)
     available = user.available if user else Decimal("0")
     can_afford = available >= price
@@ -147,7 +147,7 @@ async def buy_email(call: CallbackQuery, callback_data: EmailBuy) -> None:
     try:
         order = await email_svc.email_purchase(call.from_user.id, site, name, dom["cost"], ctx.herov1)
     except order_svc.InsufficientFunds:
-        price = await pricing.commission_price(dom["cost"])
+        price = await pricing.email_sell_price(dom["cost"])
         await safe_edit(
             call,
             f"💸 <b>Not enough balance</b>\n\n💵 Price: <b>{money(price)}</b>\n\n💳 Top up and try again.",

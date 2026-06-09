@@ -141,7 +141,7 @@ async def email_purchase(
     """Hold the price and buy an email activation. NO charge here — the customer
     is billed when the OTP arrives (poller → orders.deliver_code). Releases the
     hold if the purchase can't be placed."""
-    price = await pricing.commission_price(cost)
+    price = await pricing.email_sell_price(cost)
     if not await repo.try_hold(user_id, price):
         raise InsufficientFunds()
     try:

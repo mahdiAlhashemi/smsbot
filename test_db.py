@@ -427,7 +427,7 @@ async def main():
         async def email_reorder(self, eid):
             self.reordered.append(eid)
 
-    _ec = await _pricing.commission_price(Decimal("0.045"))
+    _ec = await _pricing.email_sell_price(Decimal("0.045"))
 
     # (a) purchase HOLDS (no charge), creates a WAITING email order
     await repo.get_or_create_user(401, None, None, False); await repo.credit(401, Decimal("5.00"))

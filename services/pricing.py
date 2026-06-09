@@ -28,6 +28,7 @@ from db import repo
 _MARKUP_KEY = "markup_percent"        # SMS/rent commission %
 _BID_KEY = "bid_premium_percent"      # bid premium %
 _ESIM_KEY = "esim_commission_percent"  # eSIM commission %
+_EMAIL_KEY = "email_commission_percent"  # Email OTP commission %
 _OVERRIDES_KEY = "markup_overrides"   # JSON {"svc:tg": 45, "cc:187": 30}
 _CENT = Decimal("0.01")
 
@@ -157,6 +158,20 @@ async def set_esim_commission(percent: Decimal) -> None:
 async def esim_sell_price(cost: Decimal) -> Decimal:
     """Customer price for an eSIM: wholesale cost + the eSIM commission."""
     return apply_markup(cost, await get_esim_commission())
+
+
+# ── Email OTP commission (separate from SMS/rent/eSIM) ────────────────────────
+async def get_email_commission() -> Decimal:
+    return await _get_pct(_EMAIL_KEY, settings.email_commission_percent)
+
+
+async def set_email_commission(percent: Decimal) -> None:
+    await repo.set_setting(_EMAIL_KEY, str(percent))
+
+
+async def email_sell_price(cost: Decimal) -> Decimal:
+    """Customer price for an email OTP: wholesale cost + the email commission (5%)."""
+    return apply_markup(cost, await get_email_commission())
 
 
 async def price_breakdown(default_cost: Decimal) -> dict:
