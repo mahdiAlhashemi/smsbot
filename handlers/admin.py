@@ -64,13 +64,28 @@ async def admin_stats(call: CallbackQuery) -> None:
         await call.answer("Not authorised.", show_alert=True)
         return
     s = await repo.admin_stats()
+    from services.context import get_ctx
+    ctx = get_ctx()
+    # Provider balances — best-effort, each guarded so one provider can't break the view.
     hero_balance = "?"
     try:
-        from services.context import get_ctx
-
-        hero_balance = money(await get_ctx().hero.get_balance())
+        hero_balance = money(await ctx.hero.get_balance())
     except Exception:  # noqa: BLE001
         pass
+    prov_lines = [f"🦸 HeroSMS: <b>{hero_balance}</b>"]
+    if ctx.payments is not None and getattr(ctx.payments, "name", "") == "OxaPay":
+        try:
+            bals = await ctx.payments.balance()
+            line = ", ".join(f"{v:.2f} {k}" for k, v in bals.items()) or "$0.00"
+        except Exception:  # noqa: BLE001
+            line = "<i>set OXAPAY_GENERAL_API_KEY</i>"
+        prov_lines.append(f"💳 OxaPay: <b>{line}</b>")
+    if ctx.esim is not None:
+        try:
+            esim_b = money(await ctx.esim.balance())
+        except Exception:  # noqa: BLE001
+            esim_b = "?"
+        prov_lines.append(f"📡 eSIM: <b>{esim_b}</b>")
     text = (
         "📊 <b>Statistics</b>\n"
         "────────────────\n"
@@ -81,7 +96,7 @@ async def admin_stats(call: CallbackQuery) -> None:
         f"💰 Sold (gross): <b>{money(s['sold'])}</b>\n"
         f"🧾 HeroSMS cost: <b>{money(s['cost'])}</b>\n"
         f"📈 Profit: <b>{money(s['profit'])}</b>\n\n"
-        f"🦸 HeroSMS account balance: <b>{hero_balance}</b>"
+        "🏦 <b>Provider balances</b>\n" + "\n".join(prov_lines)
     )
     await safe_edit(call, text, back_button("admin"))
     await call.answer()

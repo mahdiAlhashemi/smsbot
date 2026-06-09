@@ -126,7 +126,8 @@ async def main() -> None:
     catalog = Catalog(hero)
     # Pick the crypto payment provider: OxaPay preferred, then CryptoBot.
     if settings.oxapay_enabled:
-        payments = OxaPay(settings.oxapay_api_key, settings.oxapay_asset)
+        payments = OxaPay(settings.oxapay_api_key, settings.oxapay_asset,
+                          general_api_key=settings.oxapay_general_api_key)
     elif settings.cryptobot_token:
         payments = CryptoPay(settings.cryptobot_token, settings.cryptobot_testnet,
                              settings.cryptobot_asset)

@@ -37,9 +37,13 @@ class OxaPayError(Exception):
 class OxaPay:
     name = "OxaPay"
 
-    def __init__(self, api_key: str, asset: str = "USDT", client: httpx.AsyncClient | None = None):
+    def __init__(self, api_key: str, asset: str = "USDT", client: httpx.AsyncClient | None = None,
+                 general_api_key: str = ""):
         self._api_key = api_key
         self._asset = asset
+        # OxaPay's account-balance endpoint needs the *General* API key (separate
+        # from the merchant key). Optional — only used for the admin balance view.
+        self._general_api_key = general_api_key
         self._client = client or httpx.AsyncClient(timeout=30.0)
         self._owns_client = client is None
 
@@ -88,6 +92,27 @@ class OxaPay:
     async def make_invoice(self, amount: Decimal, order_id: str, callback: str | None = None) -> dict:
         r = await self._create_invoice(amount, order_id, callback=callback)
         return {"invoice_id": str(r.get("track_id", "")), "pay_url": r.get("payment_url", "")}
+
+    async def balance(self) -> dict[str, Decimal]:
+        """Merchant account balance per currency (non-zero only). Needs the OxaPay
+        General API key (GET /v1/general/account/balance). Raises if unavailable."""
+        if not self._general_api_key:
+            raise OxaPayError("OxaPay General API key not configured")
+        resp = await self._client.get(
+            f"{BASE}/general/account/balance",
+            headers={"general_api_key": self._general_api_key},
+        )
+        data = self._unwrap(resp)  # {currency: amount, ...}
+        out: dict[str, Decimal] = {}
+        if isinstance(data, dict):
+            for cur, amt in data.items():
+                try:
+                    d = Decimal(str(amt))
+                except Exception:  # noqa: BLE001
+                    continue
+                if d > 0:
+                    out[str(cur)] = d
+        return out
 
     async def invoice_status(self, invoice_id: str, order_id: str) -> str:
         if not invoice_id:

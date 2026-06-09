@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # dashboard → your Merchant (payment gateway) → API key.
     oxapay_api_key: str = ""
     oxapay_asset: str = "USDT"
+    # OxaPay *General* API key (separate from the merchant key) — only needed to
+    # show the merchant balance in the admin panel. From OxaPay dashboard → General API.
+    oxapay_general_api_key: str = ""
     # Public URL OxaPay POSTs payment callbacks to (instant crediting). When set,
     # the bot starts a localhost webhook listener and includes this URL on every
     # invoice. Leave empty to rely on polling only.
