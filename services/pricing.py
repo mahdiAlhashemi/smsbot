@@ -170,7 +170,7 @@ async def set_email_commission(percent: Decimal) -> None:
 
 
 async def email_sell_price(cost: Decimal) -> Decimal:
-    """Customer price for an email OTP: wholesale cost + the email commission (5%)."""
+    """Customer price for an email OTP: wholesale cost + the email commission (10%)."""
     return apply_markup(cost, await get_email_commission())
 
 

@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # eSIM commission (separate from SMS — eSIMs are fixed-price, no bid auction).
     esim_commission_percent: Decimal = Decimal("10")
     # Email OTP commission (separate from SMS/rent/eSIM).
-    email_commission_percent: Decimal = Decimal("5")
+    email_commission_percent: Decimal = Decimal("10")
     # Top-up deposit bonuses (spend-only credit). Base 5% on any top-up, scaling
     # to a hard max of 10%. First-ever deposit is bumped toward the max.
     topup_first_bonus_pct: Decimal = Decimal("10")
